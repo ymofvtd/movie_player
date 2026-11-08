@@ -227,11 +227,132 @@ public sealed class ScannerTests : IDisposable
         File.Delete(path);
         await scanner.ScanAsync();
         Assert.False((await library.FindFileAsync(path))!.IsAvailable);
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.Empty(catalog.Items);
+        Assert.Null(catalog.FindFile(path));
+        Assert.Equal(progress, await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id));
         Video(@"Movie\Movie.mkv");
         await scanner.ScanAsync();
         Assert.True((await library.FindFileAsync(path))!.IsAvailable);
         Assert.Equal(file.Id, (await library.FindFileAsync(path))!.Id);
         Assert.Equal(progress, await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id));
+        Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+    }
+
+    [Fact]
+    public async Task RenamingAShowRemovesItsOldHierarchyFromBrowsingAndRetainsSavedHistory()
+    {
+        var oldPath = Video(@"Old Show\Season 01\Show.S01E01.mkv");
+        Video(@"Old Show\Season 01\Show.S01E02.mkv");
+        long fileId;
+        PlaybackProgress progress;
+        long[] oldIds;
+        var newPath = Path.Combine(MediaRoot, @"Renamed Show\Season 01\Show.S01E01.mkv");
+        using (var services = Services())
+        {
+            var library = services.GetRequiredService<ILibraryRepository>();
+            var root = await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+            var scanner = services.GetRequiredService<ILibraryScannerService>();
+            await scanner.ScanAsync();
+            var file = (await library.FindFileAsync(oldPath))!;
+            Assert.Equal(root.Id, file.LibraryRootId);
+            fileId = file.Id;
+            oldIds = (await library.GetItemsAsync()).Select(i => i.Id).ToArray();
+            progress = await services.GetRequiredService<IProgressRepository>().SaveAsync(new PlaybackProgress
+                { MediaFileId = file.Id, PositionMs = 1000 });
+            Directory.Move(Path.Combine(MediaRoot, "Old Show"), Path.Combine(MediaRoot, "Renamed Show"));
+            await scanner.ScanAsync();
+            var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+            Assert.Equal("Renamed Show", Assert.Single(catalog.Items.Values, i => i.ItemType == LibraryItemType.Show).Title);
+            Assert.Equal(4, catalog.Items.Count);
+            Assert.DoesNotContain(catalog.Items.Keys, oldIds.Contains);
+            Assert.Null(catalog.FindFile(oldPath));
+            Assert.NotNull(catalog.FindFile(newPath));
+            Assert.Equal(2, catalog.Files(Assert.Single(catalog.Items.Values, i => i.ItemType == LibraryItemType.Show).Id).Count);
+            Assert.True(File.Exists(newPath));
+        }
+        using (var reopened = Services())
+        {
+            var library = reopened.GetRequiredService<ILibraryRepository>();
+            var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+            Assert.DoesNotContain(catalog.Items.Keys, oldIds.Contains);
+            Assert.NotNull(catalog.FindFile(newPath));
+            Assert.Equal(progress, await reopened.GetRequiredService<IProgressRepository>().GetAsync(fileId));
+            Assert.False((await library.FindFileAsync(oldPath))!.IsAvailable);
+        }
+    }
+
+    [Fact]
+    public async Task RenamingAnEpisodeRemovesTheOldEpisodeAndKeepsItsShowAndSeason()
+    {
+        var path = Video(@"Show\Season 01\Show.S01E01.mkv");
+        var otherPath = Video(@"Show\Season 01\Show.S01E02.mkv");
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        var scanner = services.GetRequiredService<ILibraryScannerService>();
+        await scanner.ScanAsync();
+        var before = new LibraryCatalog(await library.GetSnapshotAsync());
+        var oldEpisode = before.FindFile(path)!.LibraryItemId;
+        var show = Assert.Single(before.Items.Values, i => i.ItemType == LibraryItemType.Show);
+        var season = Assert.Single(before.Children(show.Id));
+        var newPath = Path.Combine(Path.GetDirectoryName(path)!, "Show.S01E01.Pilot.mkv");
+        File.Move(path, newPath);
+        await scanner.ScanAsync();
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.False(catalog.Items.ContainsKey(oldEpisode));
+        Assert.Equal(show.Id, Assert.Single(catalog.Items.Values, i => i.ItemType == LibraryItemType.Show).Id);
+        Assert.Equal(season.Id, Assert.Single(catalog.Children(show.Id)).Id);
+        Assert.Equal(2, catalog.Children(season.Id).Count);
+        Assert.Equal(2, catalog.Files(show.Id).Count);
+        Assert.Null(catalog.FindFile(path));
+        Assert.NotNull(catalog.FindFile(newPath));
+        Assert.NotNull(catalog.FindFile(otherPath));
+    }
+
+    [Fact]
+    public async Task PartialScanRemovesMissingSeasonButKeepsUnreadableSeasonAndUnrelatedGroups()
+    {
+        var path = Video(@"Show\Season 01\Show.S01E01.mkv");
+        var blockedPath = Video(@"Show\Season 02\Show.S02E01.mkv");
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        var root = await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        await services.GetRequiredService<ILibraryScannerService>().ScanAsync();
+        var emptyGroup = await library.SaveItemAsync(new LibraryItem
+            { Title = "My collection", ItemType = LibraryItemType.Franchise, IsManualOverride = true });
+        var before = new LibraryCatalog(await library.GetSnapshotAsync());
+        var show = Assert.Single(before.Items.Values, i => i.ItemType == LibraryItemType.Show);
+        var removedSeason = Assert.Single(before.Children(show.Id), i => i.SeasonNumber == 1);
+        // The readable part is empty; the second season could not be enumerated.
+        await services.GetRequiredService<IScanRepository>().CommitAsync(root.Id, new([], [],
+            [Path.GetDirectoryName(blockedPath)!], [new(blockedPath, "Simulated unreadable season")]));
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.False(catalog.Items.ContainsKey(removedSeason.Id));
+        Assert.Null(catalog.FindFile(path));
+        Assert.NotNull(catalog.FindFile(blockedPath));
+        Assert.Equal(2, Assert.Single(catalog.Children(show.Id)).SeasonNumber);
+        Assert.Single(catalog.Files(show.Id));
+        Assert.True(catalog.Items.ContainsKey(emptyGroup.Id));
+    }
+
+    [Fact]
+    public async Task RemovingOneEditionKeepsTheTitleAndOtherEdition()
+    {
+        var path = Video(@"Movie\Movie.Extended.mkv");
+        var remainingPath = Video(@"Movie\Movie.Theatrical.mkv");
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        var scanner = services.GetRequiredService<ILibraryScannerService>();
+        await scanner.ScanAsync();
+        var movieId = (await library.FindFileAsync(path))!.LibraryItemId;
+        File.Delete(path);
+        await scanner.ScanAsync();
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.Equal(movieId, Assert.Single(catalog.Items.Values).Id);
+        Assert.Equal(remainingPath, Assert.Single(catalog.DirectFiles(movieId)).FilePath);
+        Assert.Null(catalog.FindFile(path));
     }
 
     [Fact]
@@ -248,12 +369,14 @@ public sealed class ScannerTests : IDisposable
             [Path.GetDirectoryName(path)!], [new(path, "Simulated unreadable subtree")]));
         Assert.True((await library.FindFileAsync(path))!.IsAvailable);
         Assert.Equal(scanned.LastScanUtc, Assert.Single(await library.GetRootsAsync()).LastScanUtc);
+        Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
         Directory.Move(MediaRoot, MediaRoot + "Offline");
         var result = await scanner.ScanAsync();
         Assert.Equal(0, result.CompletedRoots);
         Assert.NotEmpty(result.Warnings);
         Assert.True((await library.FindFileAsync(path))!.IsAvailable);
         Assert.Equal(scanned.LastScanUtc, Assert.Single(await library.GetRootsAsync()).LastScanUtc);
+        Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
     }
 
     [Fact]

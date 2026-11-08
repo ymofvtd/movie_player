@@ -241,6 +241,6 @@ public sealed class LibraryRepository(SqliteDatabase database) : ILibraryReposit
         Id = (long)reader["Id"], LibraryItemId = (long)reader["LibraryItemId"], FilePath = (string)reader["FilePath"],
         FileSize = (long)reader["FileSize"], LastModifiedUtc = Sql.Date(reader, "LastModifiedUtc"), DurationMs = (long)reader["DurationMs"],
         Edition = Sql.Text(reader, "Edition"), VideoFormat = Sql.Text(reader, "VideoFormat"), IsAvailable = (long)reader["IsAvailable"] != 0,
-        LastSeenUtc = Sql.Date(reader, "LastSeenUtc")
+        LastSeenUtc = Sql.Date(reader, "LastSeenUtc"), LibraryRootId = Sql.Number(reader, "LibraryRootId")
     };
 }

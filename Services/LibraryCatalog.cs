@@ -12,12 +12,30 @@ public sealed class LibraryCatalog
     private readonly Dictionary<long, IReadOnlyList<MediaFile>> _descendantFiles = new();
     public LibraryCatalog(LibrarySnapshot snapshot)
     {
-        Items = snapshot.Items.ToDictionary(i => i.Id);
+        var allItems = snapshot.Items.ToDictionary(i => i.Id);
+        // An unavailable scanned file was confirmed missing by an authoritative enumeration.
+        // Keep its database identity/history, but remove it from every browsing index.
+        // Offline roots and unreadable subtrees retain their previous scan availability.
+        var missingFiles = snapshot.Files.Where(f => f.LibraryRootId.HasValue && !f.IsAvailable).ToArray();
+        var files = snapshot.Files.Where(f => !f.LibraryRootId.HasValue || f.IsAvailable).ToArray();
+        var affected = new HashSet<long>();
+        var retained = new HashSet<long>();
+        void AddAncestors(HashSet<long> ids, long id)
+        {
+            while (ids.Add(id) && allItems.TryGetValue(id, out var item) && item.ParentId is { } parent)
+                id = parent;
+        }
+        foreach (var file in missingFiles) AddAncestors(affected, file.LibraryItemId);
+        foreach (var file in files) AddAncestors(retained, file.LibraryItemId);
+        // Preserve unrelated empty/manual groups and containers with any surviving children.
+        foreach (var item in snapshot.Items.Where(i => !affected.Contains(i.Id))) AddAncestors(retained, item.Id);
+        Items = allItems.Where(pair => !affected.Contains(pair.Key) || retained.Contains(pair.Key))
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
         Progress = snapshot.Progress.ToDictionary(p => p.MediaFileId);
-        _children = snapshot.Items.ToLookup(i => i.ParentId ?? 0);
-        _files = snapshot.Files.ToLookup(f => f.LibraryItemId);
-        _filesByPath = snapshot.Files.ToDictionary(f => PathKey(f.FilePath), StringComparer.OrdinalIgnoreCase);
-        ContinueWatchingFiles = snapshot.Files.Where(f => f.IsAvailable && ResumePolicy.CanResume(Progress.GetValueOrDefault(f.Id)))
+        _children = Items.Values.ToLookup(i => i.ParentId ?? 0);
+        _files = files.ToLookup(f => f.LibraryItemId);
+        _filesByPath = files.ToDictionary(f => PathKey(f.FilePath), StringComparer.OrdinalIgnoreCase);
+        ContinueWatchingFiles = files.Where(f => f.IsAvailable && ResumePolicy.CanResume(Progress.GetValueOrDefault(f.Id)))
             .OrderByDescending(f => Progress[f.Id].LastPlayedUtc).ToArray();
         foreach (var id in Items.Keys) CollectFiles(id, new HashSet<long>());
     }

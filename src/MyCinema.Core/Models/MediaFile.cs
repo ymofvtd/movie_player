@@ -4,6 +4,7 @@ public sealed record MediaFile
 {
     public long Id { get; init; }
     public long LibraryItemId { get; init; }
+    public long? LibraryRootId { get; init; }
     public required string FilePath { get; init; }
     public long FileSize { get; init; }
     public DateTimeOffset LastModifiedUtc { get; init; } = DateTimeOffset.UtcNow;
