@@ -1,0 +1,124 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:services="clr-namespace:Person_Movie_Player.Services">
+    <BooleanToVisibilityConverter x:Key="LibraryBooleanToVisibility" />
+    <services:PosterImageConverter x:Key="PosterImage" />
+    <Style x:Key="MetadataTextBoxStyle" TargetType="TextBox">
+        <Setter Property="Background" Value="{DynamicResource ElevatedSurfaceBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Margin" Value="0,5,0,14" />
+    </Style>
+    <Style x:Key="LibraryComboStyle" TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ElevatedSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Background" Value="{DynamicResource ElevatedSurfaceBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                    <Setter Property="Padding" Value="10,8" />
+                    <Style.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource AccentSurfaceBrush}" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" ClickMode="Press" Foreground="{TemplateBinding Foreground}"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="6"
+                                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                        <TextBlock Text="⌄" HorizontalAlignment="Right" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                    </Border>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                          Margin="10,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+                        <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource ElevatedSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="320">
+                                <ScrollViewer CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" /></ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="MediaButtonStyle" TargetType="Button">
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="CardBorder" Background="{DynamicResource SurfaceBrush}" CornerRadius="9"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="1">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource AccentSurfaceBrush}" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <DataTemplate x:Key="MediaCardTemplate">
+        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" Width="170" Margin="0,0,14,16"
+                AutomationProperties.Name="{Binding Title}" ToolTip="{Binding Title}">
+            <StackPanel>
+                <Border Height="240" CornerRadius="7,7,0,0" ClipToBounds="True">
+                    <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#37304E" /><GradientStop Color="#20222F" Offset="1" /></LinearGradientBrush></Border.Background>
+                    <Grid ClipToBounds="True">
+                        <TextBlock Text="{Binding Initial}" FontSize="105" FontWeight="Light" Opacity="0.17" Margin="12,0,0,0" />
+                        <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="27" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16" Foreground="{DynamicResource AccentHoverBrush}" />
+                        <TextBlock Text="{Binding Kind}" FontSize="10" Margin="12" VerticalAlignment="Top" />
+                        <Image Source="{Binding PosterPath, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" AutomationProperties.Name="Poster" />
+                    </Grid>
+                </Border>
+                <StackPanel Margin="12,12,12,14">
+                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Height="40" />
+                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,7,0,0" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Context}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Context}" Visibility="{Binding HasContext, Converter={StaticResource LibraryBooleanToVisibility}}" />
+                    <TextBlock Text="{Binding Availability}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                    <TextBlock Text="{Binding WatchState}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                    <StackPanel Visibility="{Binding HasProgress, Converter={StaticResource LibraryBooleanToVisibility}}" Margin="0,10,0,0">
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" Height="3" Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ElevatedSurfaceBrush}" />
+                        <TextBlock Text="{Binding ProgressLabel}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Button>
+    </DataTemplate>
+    <DataTemplate x:Key="EpisodeRowTemplate">
+        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" HorizontalAlignment="Stretch" Margin="0,0,0,8" AutomationProperties.Name="{Binding Title}">
+            <Grid Margin="16,13">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /><ColumnDefinition Width="90" /></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AccentHoverBrush}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Margin="6,0,12,0"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" /><TextBlock Text="{Binding WatchState}" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBlock Text="{Binding ProgressLabel}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0" Visibility="{Binding HasProgress, Converter={StaticResource LibraryBooleanToVisibility}}" /></StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding Availability}" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{DynamicResource SecondaryTextBrush}" />
+            </Grid>
+        </Button>
+    </DataTemplate>
+</ResourceDictionary>

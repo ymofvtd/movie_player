@@ -4,11 +4,11 @@ A native, offline-first Windows application for a personal movie and TV library,
 
 ## Current milestone
 
-**Phase 7 — Advanced Playback is implemented and tested.** The player supports speed selection, aspect-ratio correction, audio/subtitle selection, external subtitles, and fullscreen controls that hide during inactivity. Series navigation, saved resume positions, and Continue Watching remain available. Live keyboard, menu, auto-hide, and restart acceptance checks for Phases 5–7 remain pending.
+**Phase 8 — Manual Organization is implemented and tested.** Movies, shows, and franchises support automatic folder posters, chosen local posters, metadata editing, and classification corrections. Franchise management, duplicate merging, and separating incorrectly grouped files retain file identities and watch progress through restarts and rescans. Live desktop acceptance for Phases 5–8 remains pending.
 
-Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning and the Settings hierarchy preview remain available. Editable preferences and manual metadata/artwork editing belong to later phases.
+Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning and the Settings hierarchy preview remain available. Editable preferences belong to later phases.
 
-The next implementation phase is **Phase 8 — Manual Organization**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
+The next implementation phase is **Phase 9 — Interface Polish**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
 
 ## Browsing and playing your library
 
@@ -21,7 +21,23 @@ The next implementation phase is **Phase 8 — Manual Organization**. See [plan.
 - Watch labels and watch-based filtering/sorting update from saved progress. One completed edition marks its movie watched; shows and collections require all their playable titles to be completed. Each file/edition retains its own saved position.
 - Unavailable records remain visible for inspection and can be filtered separately; their Play action is disabled. If a file disappears after the last scan, the player reports that it cannot be opened. Reconnect the drive or rescan in Settings.
 
-Search is debounced and runs on a worker against an indexed catalog. SQLite loads items, files, and progress in one consistent read transaction. Listings initially create 60 cards, with **Show more** loading another 60; Home rows are bounded previews. Cards use local fallback artwork without network requests. Scans automatically reload the browser; **Refresh** reloads the saved database without rescanning media. The saved catalog loads again on startup.
+Search is debounced and runs on a worker against an indexed catalog. SQLite loads items, files, and progress in one consistent read transaction. Listings initially create 60 cards, with **Show more** loading another 60; Home rows are bounded previews. Cards display assigned posters with offline fallback artwork. Scans automatically reload the browser; **Refresh** reloads the saved database without rescanning media. The saved catalog loads again on startup.
+
+## Posters and manual organization
+
+Put **poster.png** in a movie folder, a show's top-level folder, or a franchise's top-level folder, then use **Settings → Scan library**. The scanner picks it up automatically. It also recognizes **poster.jpg** and **poster.jpeg**, in that priority order after PNG; names are case-insensitive on Windows. For example, `Interstellar (2014)\poster.png` appears on the movie's card and details, and `Loki\poster.png` applies to the show. Each movie inside a franchise can have its own poster. Folder images stay in place; replacing or removing them is reflected on the next scan. Live filesystem monitoring remains a later feature.
+
+For a separate image, open the title and select **Choose poster…**. Pick a local JPG, PNG, BMP, GIF, or TIFF image (up to 32 MB). MyCinema stores a decoded PNG copy under `%LOCALAPPDATA%\MyCinema\Cache\Posters`, so moving or deleting the chosen source does not remove it. A chosen poster takes priority over folder artwork. **Use folder poster** clears that choice and returns to automatic folder artwork. **Remove poster** explicitly hides artwork until you choose another poster or use folder artwork again. Changes save immediately and survive restarts and rescans.
+
+Artwork appears on portrait library cards and details; episode cards can inherit their show's poster. Missing or unreadable images fall back safely. The app makes no artwork network requests.
+
+Expand **Edit details & organization** on the details page to change a title, release year, description, or classification. Episode details also let you choose its show, season, episode number, and optional range endpoint. **Save details** commits metadata; **Cancel** discards the draft. A movie's franchise selector reassigns it or returns it to the standalone library.
+
+- **Create a franchise** from movie details by entering a collection title. That movie is added automatically. On franchise details, add or remove movies, change their order, rename the collection, or remove its grouping while keeping all movies and files.
+- Changing a Movie/Show/Franchise classification reshapes its catalog hierarchy. A show conversion puts playable titles in Season 01 for subsequent episode-number editing. A franchise conversion makes them movies. A movie conversion combines the hierarchy's files as editions or parts of one title. These operations retain physical file IDs and independent progress.
+- **Combine duplicate titles** moves one playable title's files into another title with the same classification. The destination metadata is kept, with source artwork used if the destination has none. **Separate an incorrectly grouped file** creates a new title for one file when the original has multiple files. Each file keeps its saved progress.
+
+Organization writes are transactional and never rename, move, edit, or delete media. Scanner aliases preserve merged identities and remember removed franchise groupings. New children of corrected containers follow the corrected classification. Manual metadata edits protect the item from classification/title changes during scanning; folder artwork continues updating unless a poster choice or explicit removal overrides it.
 
 ## Scanning your library
 
@@ -39,7 +55,7 @@ Detection supports:
 
 Stable canonical paths retain file/item identities and saved progress on rescans. Unchanged item metadata is reused; known duration is retained for unchanged file size/timestamps. Changed files invalidate cached duration without erasing progress. Missing files are marked unavailable after a successful enumeration. An inaccessible root retains all its saved records; inaccessible subtrees retain their previous availability and do not advance the last-successful-scan time. Linked folders/files are skipped to avoid cycles and scanning outside the selected tree. Overlapping enabled roots are scanned through their available parent once.
 
-Existing manual item edits and metadata-override records take precedence over automatic detection. The correction interface and additional-root editing belong to later phases. Identity follows paths; a moved or renamed file is treated as a new path, with its old record retained as unavailable.
+Existing manual item edits and metadata-override records take precedence over automatic detection. Additional-root editing belongs to a later phase. Identity follows paths; a moved or renamed file is treated as a new path, with its old record retained as unavailable.
 
 ## Requirements
 
@@ -65,6 +81,15 @@ dotnet run --project "Person Movie Player.csproj" --configuration Release
 ```
 
 Close an application instance before rebuilding its configuration so Windows can replace the executable and assemblies.
+
+Phase 8 was also built separately while the existing Release app stayed open:
+
+```powershell
+dotnet build "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase8
+dotnet test "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase8 --no-build --no-restore
+# Close the old application before opening the updated build.
+& ".\.artifacts\phase8\bin\Person Movie Player\release\MyCinema.App.exe"
+```
 
 Alternatively, open `Person Movie Player.slnx` in Visual Studio, select the root WPF project as the startup project, and press F5. Both AnyCPU and x64 solution configurations compile the projects for x64, as configured in `Directory.Build.props`.
 
@@ -145,13 +170,13 @@ Application data is reserved under `%LOCALAPPDATA%\MyCinema`:
 
 - `Logs\mycinema-YYYY-MM-DD.log`: UTC diagnostic logs for startup, navigation, engine initialization, media opening, errors, and shutdown.
 - `Data\library.db`: SQLite database, created and migrated during startup.
-- `Cache`: reserved for future artwork caching.
+- `Cache\Posters`: imported local poster copies. Include this directory when backing up custom artwork.
 
 The default media folder is `D:\Entertaiment`, registered when no library roots exist. Diagnostic log failures fall back to debug output rather than crashing the application. Logs remain local and are not uploaded.
 
 ### Database behavior
 
-Schema version 2 contains `LibraryRoots`, `LibraryItems`, `MediaFiles`, `PlaybackProgress`, `UserSettings`, `MetadataOverrides`, scanner source identities, and migration history. Migration 2 adds episode-range endpoints and media-root ownership while retaining version 1 records. Foreign keys, hierarchy checks, indexes, and unique canonical Windows paths protect relationships and duplicate detection. Path matching normalizes case, separators, dot segments, and extended-length path prefixes; it does not resolve symbolic links or other filesystem aliases.
+Schema version 4 contains `LibraryRoots`, `LibraryItems`, `MediaFiles`, `PlaybackProgress`, `UserSettings`, `MetadataOverrides`, scanner source identities, and migration history. Migration 2 adds episode-range endpoints and media-root ownership while retaining version 1 records. Migration 3 allows multiple scanner identities to refer to a merged title and null identities to remember removed groupings, retaining all existing source/file/progress records. Migration 4 distinguishes explicit poster choices from automatically discovered folder images and preserves previously selected manual artwork. Foreign keys, hierarchy checks, indexes, and unique canonical Windows paths protect relationships and duplicate detection. Path matching normalizes case, separators, dot segments, and extended-length path prefixes; it does not resolve symbolic links or other filesystem aliases.
 
 Repository writes use transactions and parameterized SQL. File updates retain their IDs and saved progress, including when marked unavailable. One current progress record is stored per media file; older queued updates cannot replace newer progress. Metadata overrides are stored independently of ordinary metadata updates. Grouped library-item changes either commit together or roll back together.
 
@@ -169,8 +194,10 @@ To recover from a damaged database, close MyCinema and preserve a copy of the en
 
 ## Verification
 
-Verified on Windows on 2026-11-08:
+Verified on Windows on 2026-11-09 (earlier milestone checks were on 2026-11-08):
 
+- Phase 8: Debug and isolated Release builds succeed with zero warnings/errors. All 144 tests pass in Release. Nineteen new organization cases cover metadata/artwork persistence, all six Movie/Show/Franchise conversions, stable per-file progress, repeated rescans, newly added children, naming changes without duplicate seasons/items, franchise ordering/reassignment/removal, duplicate merging, file separation, episode reparenting/ranges, invalid-write rollback, cancellation, editor validation, and v2 migration. Six additional folder-artwork cases cover movie/show/franchise roots, restart persistence, episode inheritance, PNG/JPG/JPEG precedence, addition/replacement/removal through rescans, metadata/progress preservation, explicit poster/removal priority, returning to folder artwork, converted playable children, and v3 migration preserving existing manual artwork.
+- WPF checks use the actual poster picker command with an injected file choice, import an image into the cache, delete its source, reopen the database, and verify image bindings on movie/show/franchise cards and details. They render expanded editors at 604 and 956 pixels wide, check poster removal, corrupt/missing/remote-image fallback, and retaining the original target if navigation changes during import. Images are written under the test output's `Artifacts` directory. The running application was left uninterrupted; live file-picker and organization acceptance remain pending.
 - Phase 7: Release builds with zero warnings/errors; all 119 tests pass. New cases exercise all seven speed values and all four picture ratios against native VLC, invalid option rejection, reset to Original, pause/seek continuity, Stop/replay, file switching on the same player, and recoverable error details/dismissal. Five generated MKV, MP4, MOV, AVI, and WMV fixtures must decode video frames, seek, pause/resume, and accept speed changes. These cover H.264/AAC, MPEG-4 Visual/MP3, and WMV2/WMA2; they do not establish support for every codec combination.
 - Fullscreen inactivity tests use a controlled clock to verify hiding, input wake-up, pause, seeking, menus/focus, errors, and windowed visibility. Actual WPF bindings verify that hidden controls release the full video area and reappear on interaction. Templates render at small and larger sizes, with a minimum episode-list height and all selectors checked. The running desktop renders local media with the compact options panel. Live user input was detected during the desktop check, so automated desktop input was stopped; fullscreen keyboard/menu/cursor behavior and the earlier resume/sidebar desktop acceptance checks remain pending.
 - Phase 6: Release builds without warnings/errors and all 110 tests pass. Eleven sidebar cases cover numeric seasons/episode ranges, watched/live progress, independent per-episode resume, Cancel/Start Over, missing-file skipping, season transitions, concurrent-open prevention, refreshed availability, manual resets, direct file opening with canonical paths, movie/unscanned context clearing, and saved collapse state after reopening SQLite. An additional native VLC case switches between two seasons and returns to the previous episode at its saved eight-second position using the same native player.

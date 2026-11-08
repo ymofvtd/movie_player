@@ -1,0 +1,59 @@
+<UserControl x:Class="Person_Movie_Player.Views.MediaDetailsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Person_Movie_Player.Views">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,20">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Border Height="180" Background="{DynamicResource AccentSurfaceBrush}" CornerRadius="8" VerticalAlignment="Top" ClipToBounds="True">
+                        <Grid>
+                        <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding Card.Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="32" HorizontalAlignment="Center" Foreground="{DynamicResource AccentHoverBrush}" /><TextBlock Text="{Binding Card.Kind}" FontSize="12" HorizontalAlignment="Center" Margin="0,14,0,0" /></StackPanel>
+                        <Image Source="{Binding Card.PosterPath, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" AutomationProperties.Name="Title poster" />
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="24,0,0,0">
+                        <TextBlock Text="{Binding ParentTitle}" Foreground="{DynamicResource AccentHoverBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <TextBlock Text="{Binding Card.Title}" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DescriptionText}" Margin="0,16,0,0" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" LineHeight="22" />
+                        <WrapPanel Margin="0,16,0,0"><Button Content="Choose poster…" Command="{Binding Editor.ChoosePosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /><Button Content="Remove poster" Command="{Binding Editor.RemovePosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /><Button Content="Use folder poster" Command="{Binding Editor.UseFolderPosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,0,8" ToolTip="Return to poster.png, poster.jpg, or poster.jpeg in this title's folder" /></WrapPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <views:OrganizationEditor DataContext="{Binding Editor}" />
+            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,20" Visibility="{Binding IsPlayable, Converter={StaticResource BooleanToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Choose a file" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,14" />
+                    <ComboBox ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Video file or edition">
+                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{Binding SelectedFile.Details}" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,12,0,0" />
+                    <TextBlock Text="{Binding SelectedFile.File.FilePath}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,18" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ProgressSummary}" Foreground="{DynamicResource AccentHoverBrush}" Margin="0,0,0,14" />
+                    <TextBlock Text="{Binding Player.HistoryWarning}" TextWrapping="Wrap" Margin="0,0,0,10"
+                               Visibility="{Binding Player.HasHistoryWarning, Converter={StaticResource BooleanToVisibility}}" />
+                    <WrapPanel>
+                        <Button Content="{Binding PlayLabel}" Command="{Binding PlayCommand}" Style="{StaticResource PrimaryButtonStyle}" MinWidth="100" Margin="0,0,8,8" />
+                        <Button Content="Start Over" Command="{Binding StartOverCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+                        <Button Content="Mark watched" Command="{Binding MarkWatchedCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+                        <Button Content="Mark unwatched" Command="{Binding MarkUnwatchedCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+                        <Button Content="Reset progress" Command="{Binding ResetProgressCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,0,8" />
+                    </WrapPanel>
+                    <TextBlock Text="Reconnect the drive or rescan in Settings if a file is unavailable." FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                </StackPanel>
+            </Border>
+            <StackPanel Visibility="{Binding IsShow, Converter={StaticResource BooleanToVisibility}}">
+                <DockPanel Margin="0,0,0,16"><TextBlock Text="Episodes" FontSize="22" FontWeight="SemiBold" /><ComboBox ItemsSource="{Binding Seasons}" SelectedItem="{Binding SelectedSeason}" Style="{StaticResource LibraryComboStyle}" Width="160" HorizontalAlignment="Right" AutomationProperties.Name="Season selector"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></DockPanel>
+                <ItemsControl ItemsSource="{Binding Episodes}" ItemTemplate="{StaticResource EpisodeRowTemplate}" />
+                <TextBlock Text="No episodes in this season. Scan your library in Settings to discover files." TextWrapping="Wrap" Visibility="{Binding HasNoEpisodes, Converter={StaticResource BooleanToVisibility}}" Foreground="{DynamicResource SecondaryTextBrush}" />
+            </StackPanel>
+            <StackPanel Visibility="{Binding IsFranchise, Converter={StaticResource BooleanToVisibility}}">
+                <TextBlock Text="Movies in this collection" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,16" />
+                <ItemsControl ItemsSource="{Binding Movies}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+            </StackPanel>
+            <Border Style="{StaticResource CardStyle}" Visibility="{Binding IsMissing, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="This item is no longer in the library. Go back and refresh the library." TextWrapping="Wrap" /></Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

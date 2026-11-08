@@ -1,0 +1,79 @@
+<UserControl x:Class="Person_Movie_Player.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Person_Movie_Player.ViewModels">
+    <StackPanel>
+        <Border Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <TextBlock Text="Library" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Library folders" Foreground="{DynamicResource SecondaryTextBrush}"
+                           Margin="0,20,0,8" />
+                <TextBlock Text="{Binding LibraryRoots}" FontFamily="Consolas" TextWrapping="Wrap" />
+                <TextBlock Text="Scan your folders to discover movies, shows, and franchise candidates."
+                           Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,14,0,0" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                    <Button Content="Scan library" Command="{Binding ScanCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                    <Button Content="Cancel scan" Command="{Binding CancelScanCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" />
+                </StackPanel>
+                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,18,0,0"
+                             Foreground="{DynamicResource AccentBrush}"
+                             Visibility="{Binding IsScanning, Converter={StaticResource BooleanToVisibility}}" />
+                <TextBlock Text="{Binding ScanStatus}" TextWrapping="Wrap" Margin="0,16,0,0"
+                           AutomationProperties.LiveSetting="Polite" />
+                <TextBlock Text="{Binding ScanPath}" Foreground="{DynamicResource SecondaryTextBrush}"
+                           TextTrimming="CharacterEllipsis" Margin="0,6,0,0" />
+                <Expander Header="Scan warnings" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,12,0,0"
+                          Visibility="{Binding HasScanWarnings, Converter={StaticResource BooleanToVisibility}}">
+                    <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding ScanWarnings}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,8,0,0" /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Expander>
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0">
+            <StackPanel>
+                <TextBlock Text="Detected library" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding LibrarySummary}" Foreground="{DynamicResource SecondaryTextBrush}"
+                           TextWrapping="Wrap" Margin="0,12,0,16" />
+                <TextBlock Text="Expand an item to review its detected organization. Library browsing comes next."
+                           Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                <TreeView ItemsSource="{Binding PreviewItems}" Background="Transparent" BorderThickness="0"
+                          Foreground="{DynamicResource TextBrush}" MaxHeight="320"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          AutomationProperties.Name="Detected library">
+                    <TreeView.Resources>
+                        <HierarchicalDataTemplate DataType="{x:Type vm:ScanPreviewItem}" ItemsSource="{Binding Children}">
+                            <TextBlock Text="{Binding Label}" Margin="4,6" />
+                        </HierarchicalDataTemplate>
+                        <Style TargetType="TreeViewItem">
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+                        </Style>
+                    </TreeView.Resources>
+                </TreeView>
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0">
+            <StackPanel>
+                <TextBlock Text="Storage on this device" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Application data" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,20,0,8" />
+                <TextBlock Text="{Binding ApplicationDataDirectory}" FontFamily="Consolas" TextWrapping="Wrap" />
+                <TextBlock Text="Diagnostic logs" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,20,0,8" />
+                <TextBlock Text="{Binding LogsDirectory}" FontFamily="Consolas" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0">
+            <StackPanel>
+                <TextBlock Text="About MyCinema" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Margin="0,16,0,8"><Run Text="Version " /><Run Text="{Binding Version, Mode=OneWay}" /></TextBlock>
+                <TextBlock Text="A personal, offline home for your local media. No account or server required."
+                           Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

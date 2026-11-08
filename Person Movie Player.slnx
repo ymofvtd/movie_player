@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="Person Movie Player.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/MyCinema.Core/MyCinema.Core.csproj" />
+    <Project Path="src/MyCinema.Infrastructure/MyCinema.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MyCinema.Tests/MyCinema.Tests.csproj" />
+  </Folder>
+</Solution>

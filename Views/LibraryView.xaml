@@ -1,0 +1,65 @@
+<UserControl x:Class="Person_Movie_Player.Views.LibraryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <StackPanel>
+            <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12,9">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <Grid>
+                            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
+                                     AutomationProperties.Name="Search library" ToolTip="Search titles, shows, collections and episodes" />
+                            <TextBlock Text="Search your library…" IsHitTestVisible="False" Foreground="{DynamicResource SecondaryTextBrush}" Margin="2,0,0,0">
+                                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding SearchText}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </DockPanel>
+                </Border>
+                <Button Grid.Column="1" Content="Refresh" Command="{Binding Store.RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" />
+            </Grid>
+            <WrapPanel Margin="0,0,0,4">
+                <ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding TypeFilter}" Style="{StaticResource LibraryComboStyle}" Width="130" Margin="0,0,8,8" AutomationProperties.Name="Media type"
+                          Visibility="{Binding ShowTypeFilter, Converter={StaticResource BooleanToVisibility}}" />
+                <ComboBox ItemsSource="{Binding AvailabilityOptions}" SelectedItem="{Binding AvailabilityFilter}" Style="{StaticResource LibraryComboStyle}" Width="148" Margin="0,0,8,8" AutomationProperties.Name="Availability filter" />
+                <ComboBox ItemsSource="{Binding WatchOptions}" SelectedItem="{Binding WatchFilter}" Style="{StaticResource LibraryComboStyle}" Width="155" Margin="0,0,8,8" AutomationProperties.Name="Watch state filter" />
+                <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding YearFilter}" Style="{StaticResource LibraryComboStyle}" Width="112" Margin="0,0,8,8" AutomationProperties.Name="Release year filter" Visibility="{Binding ShowYearFilter, Converter={StaticResource BooleanToVisibility}}" />
+                <ComboBox ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" Style="{StaticResource LibraryComboStyle}" Width="163" Margin="0,0,8,8" AutomationProperties.Name="Sort library" />
+                <Button Content="Reset" Command="{Binding ResetFiltersCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="12,8" Margin="0,0,0,8" />
+            </WrapPanel>
+            <TextBlock Text="{Binding ResultSummary}" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,14" />
+            <TextBlock Text="Loading your library…" Foreground="{DynamicResource AccentHoverBrush}" Margin="0,0,0,12" Visibility="{Binding Store.IsLoading, Converter={StaticResource BooleanToVisibility}}" />
+            <TextBlock Text="{Binding Store.ErrorMessage}" Foreground="#F5B7B7" TextWrapping="Wrap" Margin="0,0,0,8" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Border Style="{StaticResource CardStyle}" Padding="24" Margin="0,0,14,22" Visibility="{Binding IsHome, Converter={StaticResource BooleanToVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,20,0"><TextBlock Text="Tonight is yours." FontSize="26" FontWeight="SemiBold" /><TextBlock Text="Your collection, ready whenever you are." Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" /></StackPanel>
+                        <Button Grid.Column="1" Content="Open video" Command="{Binding OpenFileCommand}" Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Center" ToolTip="Open a local video (Ctrl+O)" />
+                    </Grid>
+                </Border>
+                <ItemsControl ItemsSource="{Binding Sections}" Visibility="{Binding ShowSections, Converter={StaticResource BooleanToVisibility}}">
+                    <ItemsControl.ItemTemplate><DataTemplate>
+                        <StackPanel Margin="0,0,0,22">
+                            <TextBlock Text="{Binding Title}" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,14" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Visibility="{Binding ShowCards, Converter={StaticResource BooleanToVisibility}}">
+                    <ItemsControl ItemsSource="{Binding DisplayCards}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+                    <Button Content="Show more" Command="{Binding LoadMoreCommand}" Visibility="{Binding HasMore, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Center" Margin="0,8,0,16" />
+                </StackPanel>
+                <Border Style="{StaticResource CardStyle}" Margin="0,10,14,0" Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibility}}">
+                    <StackPanel><TextBlock Text="Nothing here yet" FontSize="21" FontWeight="SemiBold" /><TextBlock Text="{Binding EmptyMessage}" TextWrapping="Wrap" Margin="0,10,0,18" Foreground="{DynamicResource SecondaryTextBrush}" /><Button Content="View settings" Command="{Binding ViewSettingsCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
