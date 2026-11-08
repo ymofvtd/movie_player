@@ -1,0 +1,195 @@
+# MyCinema
+
+A native, offline-first Windows application for a personal movie and TV library, built with C#, .NET 10, and WPF.
+
+## Current milestone
+
+**Phase 7 — Advanced Playback is implemented and tested.** The player supports speed selection, aspect-ratio correction, audio/subtitle selection, external subtitles, and fullscreen controls that hide during inactivity. Series navigation, saved resume positions, and Continue Watching remain available. Live keyboard, menu, auto-hide, and restart acceptance checks for Phases 5–7 remain pending.
+
+Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning and the Settings hierarchy preview remain available. Editable preferences and manual metadata/artwork editing belong to later phases.
+
+The next implementation phase is **Phase 8 — Manual Organization**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
+
+## Browsing and playing your library
+
+- **Home** shows recent additions, movies, TV shows, franchises, and any uncategorized videos. Each row previews up to eight titles; use the sidebar to browse the full section or use Home search/type filters.
+- **Movies** includes standalone films and films inside collections. **Franchises** opens a collection's movies in the saved folder/ordinal order. Collection folders themselves are never playable.
+- **TV Shows** opens show details with a season selector and an episode list ordered by numeric season/episode numbers. Multi-episode files show their episode range. Select an episode to open its file details.
+- Open a movie or episode, choose its file/edition, and press **Play**. File paths, format, cached runtime, and size help distinguish editions and parts. Runtime shows as unknown when it has not been cached. **Back** returns through details to the original listing, retaining search/filter values and season/file selections during this session.
+- Search matches titles and their parent show/collection names, ignoring case. Home and TV Shows search also include matching episodes. Home's **Episodes** type filter provides a complete episode listing; **Uncategorized** exposes uncertain detections.
+- Combine availability, watch state, release year, and applicable media-type filters. Sort by title in either direction, newest release year, recently added, recently watched, or unwatched first. **Reset** restores the page defaults. Unknown years remain visible under **All years**.
+- Watch labels and watch-based filtering/sorting update from saved progress. One completed edition marks its movie watched; shows and collections require all their playable titles to be completed. Each file/edition retains its own saved position.
+- Unavailable records remain visible for inspection and can be filtered separately; their Play action is disabled. If a file disappears after the last scan, the player reports that it cannot be opened. Reconnect the drive or rescan in Settings.
+
+Search is debounced and runs on a worker against an indexed catalog. SQLite loads items, files, and progress in one consistent read transaction. Listings initially create 60 cards, with **Show more** loading another 60; Home rows are bounded previews. Cards use local fallback artwork without network requests. Scans automatically reload the browser; **Refresh** reloads the saved database without rescanning media. The saved catalog loads again on startup.
+
+## Scanning your library
+
+Open **Settings** and choose **Scan library**. On first setup, MyCinema registers `D:\Entertaiment` as its default library root. Startup loads the saved library without automatically rescanning it. Choose **Scan library** again after adding or removing media.
+
+The scanner reads directory entries, video extensions, sizes, and modification times. It never renames, moves, edits, or deletes media. **Cancel scan** cancels discovery or rolls back the unfinished root's database transaction; previously completed roots remain saved. Closing the app also cancels and waits for an active scan.
+
+Detection supports:
+
+- Movie folders, release years, common technical-tag cleanup, and edition labels such as Extended Edition, Director's Cut, Theatrical Cut, and Remastered.
+- Season folders named `Season 01`, `Season 001`, `S01`, or `Series 1`; episode names such as `S01E02`, `1x02`, and `E02` inside a known season.
+- Multi-episode files such as `S01E01-E02`, saved as one file and one episode item with an explicit episode range.
+- Franchise candidates containing multiple movie folders. Shows within mixed collections remain independent shows. Numeric folder prefixes are retained for sorting while being removed from display titles.
+- Sample, trailer, and extras exclusions; matching alternate cuts and numbered parts share a movie item. Ambiguous videos go to Uncategorized with a warning.
+
+Stable canonical paths retain file/item identities and saved progress on rescans. Unchanged item metadata is reused; known duration is retained for unchanged file size/timestamps. Changed files invalidate cached duration without erasing progress. Missing files are marked unavailable after a successful enumeration. An inaccessible root retains all its saved records; inaccessible subtrees retain their previous availability and do not advance the last-successful-scan time. Linked folders/files are skipped to avoid cycles and scanning outside the selected tree. Overlapping enabled roots are scanned through their available parent once.
+
+Existing manual item edits and metadata-override records take precedence over automatic detection. The correction interface and additional-root editing belong to later phases. Identity follows paths; a moved or renamed file is treated as a new path, with its old record retained as unavailable.
+
+## Requirements
+
+- Windows 10 or Windows 11, x64
+- .NET 10 SDK for development
+- Visual Studio with the .NET desktop development workload, if using the IDE
+- Internet access for the initial NuGet restore; the application itself requires no network connection
+
+## Build and run
+
+From the repository directory:
+
+```powershell
+dotnet build "Person Movie Player.slnx"
+dotnet test "Person Movie Player.slnx" --no-build
+dotnet run --project "Person Movie Player.csproj"
+```
+
+To run the latest verified Release build:
+
+```powershell
+dotnet run --project "Person Movie Player.csproj" --configuration Release
+```
+
+Close an application instance before rebuilding its configuration so Windows can replace the executable and assemblies.
+
+Alternatively, open `Person Movie Player.slnx` in Visual Studio, select the root WPF project as the startup project, and press F5. Both AnyCPU and x64 solution configurations compile the projects for x64, as configured in `Directory.Build.props`.
+
+## Watching a local video
+
+Choose **Open video** from Home or the Player page, or press **Ctrl+O**. Select a local file in the Windows file picker. The player accepts MKV, MP4, AVI, MOV, WMV, WebM, M4V, MPG, MPEG, TS, and M2TS; decoding depends on the VLC runtime and the file's codecs.
+
+Drag the seek bar to jump to a time. **Stop** resets playback to the beginning; **Play** starts it again. Fullscreen fills the current monitor and restores the previous window bounds and state when exited. Windowed controls stay visible below the video. In fullscreen, the header and controls hide after three seconds of inactivity; moving the pointer, clicking the picture, or pressing a key reveals them. Pause, seeking, errors, open menus, and pointer/keyboard interaction with controls keep them visible. The video host and native player are retained throughout these changes.
+
+Expand **Audio, subtitles & picture** below the video to access the playback options. It starts collapsed to leave room for the picture and episode list at small window sizes. Use **Audio language** to choose any available language or dub. Track names and language tags come from the file; choosing English requires an English track to be included. Tracks with missing language tags retain VLC's track descriptions. Selections become available once playback is ready and can be changed while playing or paused.
+
+Use **Subtitles** to select an embedded track or **Off**. **Load subtitles…** adds and selects a local SRT, ASS, SSA, VTT, SUB, or IDX file. External subtitle support depends on VLC and the subtitle format. Audio and subtitle choices apply to the current playback session; the original media is unchanged.
+
+**Speed** offers 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75×, and 2×. **Aspect ratio** defaults to **Original**, fitting the picture with its source proportions. Select 16:9, 4:3, or 2.35:1 to correct a file's picture shape; choose Original to reset. Speed and aspect-ratio choices survive Stop/replay and file switches within this session. They do not reset progress, reopen media, or change the source file. They return to defaults after application restart.
+
+### Progress and resume
+
+For files already in the scanned library, progress saves every ten seconds during playback and on pause, Stop, file switching, navigation away, natural end, and application close. Stop preserves the position before resetting the player; pressing Play after Stop starts at the beginning. Files opened outside the scanned library play normally and do not create library/history records.
+
+Opening an unfinished file after at least 5% watched offers **Resume**, **Start Over**, or **Cancel**. Resume starts from the saved timestamp when VLC is ready. Start Over resets that file's progress. Cancel keeps the current page and leaves any prior playback paused. Existing persisted `ResumePlayback` and `ShowResumePrompt` settings are respected; preference editing is still planned.
+
+**Continue Watching** on Home and in the sidebar lists available unfinished movies and episodes, newest played first, with timestamps and progress bars. Multiple editions are grouped by title; opening a Continue Watching card selects the most recently played resumable edition. Completed or unavailable files are excluded. A file below 5% watched still saves its position without appearing in Continue Watching or prompting to resume.
+
+Natural end marks a file watched. Seeking into the credits alone does not. File details provide **Mark watched**, **Mark unwatched**, **Reset progress**, and **Start Over**. Mark unwatched clears completion and retains an unfinished position, or resets a completed file to zero. Reset progress removes that file's saved position and watch state. Completion stays watched during replay until explicitly changed or reset. Changes update library badges, filters, and Continue Watching. Failed history writes show a warning while playback remains usable.
+
+### Watching a series
+
+Playing a scanned episode opens its show's panel on the right, including when the file is opened through **Open video**. Choose a season and click an episode to play it. Seasons and episodes use numeric order; multi-episode files appear once with their range. The current episode is highlighted and brought into view when switching episodes, changing to its season, or expanding the panel. Rows show watched state, saved progress, and live progress for the current episode. Unavailable rows remain visible with playback disabled. Movies and unscanned files hide the panel.
+
+The previous/next buttons in the player header, or **P** / **N**, navigate through available episodes across seasons and skip missing files and empty seasons. Navigation is disabled at the first/last available episode. Natural end marks the current episode watched; automatic next-episode playback remains planned. Browsing another season leaves playback running until an episode is clicked.
+
+Episode switches use the existing Resume / Start Over / Cancel behavior and save the previous episode's position first. Cancel retains the current episode, paused. Alternate files prefer the current edition or the most recently played available edition. **Hide episodes** / **Show episodes** works in windowed and fullscreen playback. Its state is saved separately in `UserSettings` and restored on startup when the stored `RememberSidebarState` preference is enabled. Playback controls remain below the video and span the full player width.
+
+| Shortcut | Action |
+|---|---|
+| Ctrl+O | Open a local video from any page |
+| Space | Play / pause on the Player page |
+| Left / Right | Rewind / forward ten seconds |
+| Up / Down | Raise / lower volume by five points |
+| M | Mute / unmute |
+| P / N | Previous / next available episode, across seasons |
+| S | Reveal playback options and open the subtitle selector |
+| Tab from the video | Reveal and focus playback controls |
+| F | Toggle fullscreen |
+| Escape | Exit fullscreen |
+| Double-click video | Toggle fullscreen |
+
+Playback shortcuts avoid editable text fields, selectors, and modal dialogs. Escape closes an open selector first; otherwise it exits fullscreen, including when a selector has focus.
+
+Browsing away pauses playback. Returning to Player preserves the picture and position within the current application session. Scanned library progress survives application restarts; volume and track choices are not yet saved across restarts.
+
+Unavailable and malformed files produce a readable player error. Expand **Details** for the attempted file path or available VLC diagnostics. **Dismiss** clears the message without stopping playback. A failed session offers **Retry** in the transport controls; another local file can also be opened. Selecting an unavailable file while valid media is playing preserves the existing session. Audio/subtitle, speed, and picture-option failures also preserve current playback.
+
+## Structure
+
+```text
+Person Movie Player.csproj                 WPF app; output assembly MyCinema.App
+App.xaml / App.xaml.cs                     Resources, startup, shutdown, DI ownership
+MainWindow.xaml / MainWindow.xaml.cs       Navigation shell
+Services/                                 App service registration and navigation
+ViewModels/                               Observable page and shell state
+Views/                                    Library browser, details, Home, Player, Settings scan preview
+Themes/                                   Shared colors and control styles
+src/MyCinema.Core/                        Models and framework-independent contracts
+src/MyCinema.Infrastructure/              SQLite, repositories, scanning, settings, VLC, paths, logging
+tests/MyCinema.Tests/                     xUnit, SQLite, and native playback integration tests
+```
+
+The original app project remains at the repository root to preserve the existing Visual Studio entry point. The app references Core and Infrastructure; Infrastructure references Core. Core has no WPF, SQLite, or VLC dependency. Infrastructure owns the VLC engine and media player behind `IPlaybackService`; only the WPF view adapter consumes the native video output handle. The WPF and native VLC packages remain in the app.
+
+One shared playback service serializes open, play, and stop operations off the UI thread. Native callbacks publish immutable state, and the player ViewModel dispatches updates onto WPF's UI thread. The application waits for playback operations to finish and stops VLC before disposing the window and service container.
+
+The video host stays alive during page navigation and fullscreen transitions. Mouse input uses the supported `VideoView` content overlay, while playback controls sit outside the native video region, following [LibVLCSharp's WPF guidance](https://github.com/videolan/libvlcsharp/blob/3.x/docs/getting_started.md#wpf).
+
+## Local data
+
+Application data is reserved under `%LOCALAPPDATA%\MyCinema`:
+
+- `Logs\mycinema-YYYY-MM-DD.log`: UTC diagnostic logs for startup, navigation, engine initialization, media opening, errors, and shutdown.
+- `Data\library.db`: SQLite database, created and migrated during startup.
+- `Cache`: reserved for future artwork caching.
+
+The default media folder is `D:\Entertaiment`, registered when no library roots exist. Diagnostic log failures fall back to debug output rather than crashing the application. Logs remain local and are not uploaded.
+
+### Database behavior
+
+Schema version 2 contains `LibraryRoots`, `LibraryItems`, `MediaFiles`, `PlaybackProgress`, `UserSettings`, `MetadataOverrides`, scanner source identities, and migration history. Migration 2 adds episode-range endpoints and media-root ownership while retaining version 1 records. Foreign keys, hierarchy checks, indexes, and unique canonical Windows paths protect relationships and duplicate detection. Path matching normalizes case, separators, dot segments, and extended-length path prefixes; it does not resolve symbolic links or other filesystem aliases.
+
+Repository writes use transactions and parameterized SQL. File updates retain their IDs and saved progress, including when marked unavailable. One current progress record is stored per media file; older queued updates cannot replace newer progress. Metadata overrides are stored independently of ordinary metadata updates. Grouped library-item changes either commit together or roll back together.
+
+Database operations run on worker threads because [Microsoft.Data.Sqlite's async ADO methods execute synchronously](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/async). Connections enable foreign keys, use a five-second lock timeout, and close after each operation. No live connection is shared across threads.
+
+`ISettingsService` validates and persists typed JSON preferences in `UserSettings`. Missing or malformed preferences restore safe defaults without resetting the library. Library roots have their own repository. Resume and sidebar-state preferences are applied; other playback preferences are not yet applied or editable through Settings.
+
+Startup checks database integrity and refuses a schema from a newer application version. Database failures are logged and reported with the database path; the application does not erase or recreate an existing damaged database.
+
+### Backup and recovery
+
+`IDatabaseService.BackupAsync` creates a consistent backup through [SQLite's online backup API](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/backup). Supply an absolute destination filename in an existing directory. It refuses the active database path and never replaces an existing backup. A backup button and automatic backup scheduling are not yet part of the interface.
+
+To recover from a damaged database, close MyCinema and preserve a copy of the entire `Data` directory first. Restore a known good database backup to `%LOCALAPPDATA%\MyCinema\Data\library.db`, retaining the damaged copy separately. Relaunch MyCinema to validate and migrate the restored database, then rescan in Settings to discover current media. A fresh database can rebuild the media catalog through scanning, but cannot reconstruct watch progress or manual metadata from the media files alone.
+
+## Verification
+
+Verified on Windows on 2026-11-08:
+
+- Phase 7: Release builds with zero warnings/errors; all 119 tests pass. New cases exercise all seven speed values and all four picture ratios against native VLC, invalid option rejection, reset to Original, pause/seek continuity, Stop/replay, file switching on the same player, and recoverable error details/dismissal. Five generated MKV, MP4, MOV, AVI, and WMV fixtures must decode video frames, seek, pause/resume, and accept speed changes. These cover H.264/AAC, MPEG-4 Visual/MP3, and WMV2/WMA2; they do not establish support for every codec combination.
+- Fullscreen inactivity tests use a controlled clock to verify hiding, input wake-up, pause, seeking, menus/focus, errors, and windowed visibility. Actual WPF bindings verify that hidden controls release the full video area and reappear on interaction. Templates render at small and larger sizes, with a minimum episode-list height and all selectors checked. The running desktop renders local media with the compact options panel. Live user input was detected during the desktop check, so automated desktop input was stopped; fullscreen keyboard/menu/cursor behavior and the earlier resume/sidebar desktop acceptance checks remain pending.
+- Phase 6: Release builds without warnings/errors and all 110 tests pass. Eleven sidebar cases cover numeric seasons/episode ranges, watched/live progress, independent per-episode resume, Cancel/Start Over, missing-file skipping, season transitions, concurrent-open prevention, refreshed availability, manual resets, direct file opening with canonical paths, movie/unscanned context clearing, and saved collapse state after reopening SQLite. An additional native VLC case switches between two seasons and returns to the previous episode at its saved eight-second position using the same native player.
+- The WPF player and sidebar render at 604×400, 956×540, and 1180×540; the active row, season selector, navigation states, and full-width playback controls are checked. Images are written under the test output's `Artifacts` directory. Computer Use again rejected the live application launch with “Computer Use was not approved to use app,” so interactive sidebar, keyboard, auto-scroll, and fullscreen acceptance remain pending.
+- Phase 5 plus audio/subtitle selection: Release builds without warnings/errors and all 98 tests pass. Added cases cover periodic saves, pause/Stop positions, file switching, stale callbacks, completion/reset behavior, resume choices/preferences/thresholds, Continue Watching episodes and edition selection, and persistence after reopening SQLite. A native integration case opens a scanned fixture, pauses/seeks, saves and disposes the player/container, reopens the same database with a new player, resumes at the saved timestamp, and verifies Stop/replay starts at zero.
+- A generated 20-second H.264/AAC MKV exercises actual Russian-to-English audio switching, subtitle enable/Off, external SRT loading, invalid track IDs, unavailable subtitle files, and clearing stale tracks on file changes. Tests use dummy outputs with hardware decoding explicitly disabled on MediaPlayer.
+- The actual WPF player template is laid out and rendered at its minimum available width (676 pixels beside the sidebar); selectors display readable current choices and fit with Load subtitles. A live desktop launch was rejected by Computer Use with “Computer Use was not approved to use app,” so interactive desktop verification for these changes remains pending. Earlier desktop checks below describe prior phases.
+- Release solution build succeeds.
+- Phase 4 originally passed 83 tests: the 68 foundation, player, database, and scanner cases, plus 15 browser, details-navigation, and WPF template-loading cases.
+- Browser tests cover collection movies, unavailable/uncategorized records, empty states, rapid search cancellation, episode search and parent context, combined filters, all six sort options, numeric season/episode order, multi-episode ranges, edition selection, shared-player navigation, Back/selection restoration, saved snapshot reopening, watch-state aggregation, batched cards, refresh after availability changes, and automatic refresh after scanning.
+- Phase 4 desktop checks browse the real saved catalog (50 movies, two shows, two franchises), search Movies, open Ant-Man and play its 4K MKV, switch Loki to Season 02 and play Ouroboros, return through Back with the season preserved, and inspect Harry Potter's eight movies in ordinal order. The file/season selectors display readable labels. Closing during playback and after browsing exits with code 0. The browser requires no database migration and does not modify media files or watch history.
+- SQLite checks cover every record type and typed settings across service-container disposal/reopening; record updates; numeric episode ordering; foreign keys and hierarchy validation; canonical path uniqueness; progress preservation and stale saves; grouped rollback; parameterized text; settings recovery; concurrent independent connections; cancellation; migration idempotence and rollback; newer-schema refusal; corrupt/unwritable database handling; and backup restoration without overwriting existing backups.
+- Scanner checks cover the roadmap's Lord of the Rings/Game of Thrones examples, mixed collections, numeric episode order, multi-episode ranges, all 11 extensions, editions, parts, extras, uncertain media, unchanged rescans, changed/missing/returning files, unavailable roots, simulated unreadable subtrees, preserved manual edits/progress, cancellation, rejected concurrent scans, overlapping/disabled roots, transaction rollback, v1-to-v2 upgrades, and saved previews.
+- Phase 3 desktop checks verify automatic upgrade of the existing version 1 database, Settings controls, a real scan of `D:\Entertaiment`, collection expansion, saved counts on restart, and clean shutdown (exit code 0). The scan found 73 files: 50 movies and 23 episodes across two shows, with two franchise candidates and three seasons; no warnings or uncategorized files. Harry Potter and Marvel are franchise candidates; BAYM and Loki are shows. The real database passes `integrity_check` with two migration records. No fixture media was inserted into the user's media folders.
+- Native tests use generated local WAV media with dummy audio/video outputs to check engine loading, pause, actual native seek position, stop, replay, natural end, file switching, resource disposal, missing/corrupt files, and recovery. They require the packaged native VLC binaries and make no network requests.
+- Desktop playback verified with local 4K H.265 MKV media: play/pause, seek-bar dragging, ten-second skips, volume/mute, stop/replay, fullscreen, Escape restoration, double-click toggling, visible controls, and navigation away/back without losing the picture or session position.
+- Phase 1 verification confirmed closing the window during active playback succeeds with exit code 0.
+- Startup diagnostics confirm the running application is 64-bit.
+
+The native integration tests exercise the engine without measuring audible output or GPU rendering. Desktop smoke checks cover the rendered picture and controls on this machine. Broader codec coverage, audio-device testing, display scaling, clean-machine deployment, and release packaging remain later acceptance checks in the project plan.
+#   m o v i e _ p l a y e r  
+ 
