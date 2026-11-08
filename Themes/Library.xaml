@@ -11,6 +11,8 @@
         <Setter Property="Padding" Value="10,8" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Margin" Value="0,5,0,14" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}" />
+        <Style.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger></Style.Triggers>
     </Style>
     <Style x:Key="LibraryComboStyle" TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
@@ -18,17 +20,25 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="Padding" Value="10,8" />
         <Setter Property="Height" Value="36" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}" />
+        <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=SelectionBoxItem}" />
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
                 <Style TargetType="ComboBoxItem">
                     <Setter Property="Background" Value="{DynamicResource ElevatedSurfaceBrush}" />
                     <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                     <Setter Property="Padding" Value="10,8" />
-                    <Style.Triggers>
-                        <Trigger Property="IsHighlighted" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource AccentSurfaceBrush}" />
-                        </Trigger>
-                    </Style.Triggers>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ChoiceBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="ChoiceBorder" Property="Background" Value="{DynamicResource AccentSurfaceBrush}" /></Trigger>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ChoiceBorder" Property="Background" Value="{DynamicResource AccentSurfaceBrush}" /><Setter TargetName="ChoiceBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate></Setter.Value></Setter>
                 </Style>
             </Setter.Value>
         </Setter>
@@ -37,11 +47,12 @@
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
                         <ToggleButton Focusable="False" ClickMode="Press" Foreground="{TemplateBinding Foreground}"
+                                      Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
-                                    <Border Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="6"
-                                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="6"
+                                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
                                         <TextBlock Text="⌄" HorizontalAlignment="Right" Margin="0,0,10,0" VerticalAlignment="Center" />
                                     </Border>
                                 </ControlTemplate>
@@ -50,7 +61,7 @@
                         <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                           ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                           Margin="10,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False" />
-                        <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
                             <Border Background="{DynamicResource ElevatedSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                     MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="320">
                                 <ScrollViewer CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" /></ScrollViewer>
@@ -58,7 +69,8 @@
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" /></Trigger>
                         <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -69,6 +81,8 @@
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}" />
+        <Setter Property="AutomationProperties.HelpText" Value="{Binding AccessibleDescription}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -77,31 +91,35 @@
                         <ContentPresenter />
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource AccentSurfaceBrush}" /></Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource ElevatedSurfaceBrush}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" /><Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource AccentSurfaceBrush}" /></Trigger>
+                        <Trigger Property="IsPressed" Value="True"><Setter Property="Opacity" Value="0.85" /></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>
     <DataTemplate x:Key="MediaCardTemplate">
-        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" Width="170" Margin="0,0,14,16"
-                AutomationProperties.Name="{Binding Title}" ToolTip="{Binding Title}">
+        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" Width="170" Margin="3,3,11,13"
+                AutomationProperties.Name="{Binding Title}" ToolTip="{Binding AccessibleDescription}">
             <StackPanel>
                 <Border Height="240" CornerRadius="7,7,0,0" ClipToBounds="True">
                     <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#37304E" /><GradientStop Color="#20222F" Offset="1" /></LinearGradientBrush></Border.Background>
                     <Grid ClipToBounds="True">
                         <TextBlock Text="{Binding Initial}" FontSize="105" FontWeight="Light" Opacity="0.17" Margin="12,0,0,0" />
                         <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="27" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16" Foreground="{DynamicResource AccentHoverBrush}" />
-                        <TextBlock Text="{Binding Kind}" FontSize="10" Margin="12" VerticalAlignment="Top" />
                         <Image Source="{Binding PosterPath, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" AutomationProperties.Name="Poster" />
+                        <Border Background="#DA15151B" CornerRadius="4" Padding="7,4" Margin="10" VerticalAlignment="Top" HorizontalAlignment="Left"><TextBlock Text="{Binding Kind}" FontSize="10" /></Border>
+                        <Border Background="#DA15151B" CornerRadius="4" Padding="7,4" Margin="10" VerticalAlignment="Bottom" HorizontalAlignment="Left">
+                            <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsAvailable}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></Border.Style>
+                            <TextBlock Text="Drive unavailable" FontSize="10" Foreground="{DynamicResource WarningBrush}" />
+                        </Border>
                     </Grid>
                 </Border>
                 <StackPanel Margin="12,12,12,14">
                     <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Height="40" />
                     <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,7,0,0" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding Context}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Context}" Visibility="{Binding HasContext, Converter={StaticResource LibraryBooleanToVisibility}}" />
-                    <TextBlock Text="{Binding Availability}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
                     <TextBlock Text="{Binding WatchState}" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
                     <StackPanel Visibility="{Binding HasProgress, Converter={StaticResource LibraryBooleanToVisibility}}" Margin="0,10,0,0">
                         <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" Height="3" Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ElevatedSurfaceBrush}" />

@@ -17,7 +17,7 @@ using MyCinema.Infrastructure.Services;
 
 namespace MyCinema.Tests;
 
-public sealed class LibraryTemplateTests
+public sealed partial class LibraryTemplateTests
 {
     [Fact]
     public async Task CardAndEpisodeTemplatesLoadTheirResourcesOnAnStaThread()
@@ -81,6 +81,8 @@ public sealed class LibraryTemplateTests
                 VerifyFullscreenLayout();
                 VerifySidebarLayout(artifacts);
                 VerifyOrganizationPosterLayout(artifacts);
+                VerifyPosterCache();
+                VerifyPolishedLayouts(artifacts);
                 completion.SetResult();
             }
             catch (Exception error) { completion.SetException(error); }
@@ -88,7 +90,7 @@ public sealed class LibraryTemplateTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(45));
     }
 
     private static void VerifyFullscreenLayout()

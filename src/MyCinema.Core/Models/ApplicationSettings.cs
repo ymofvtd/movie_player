@@ -3,6 +3,7 @@ namespace MyCinema.Core.Models;
 public sealed record ApplicationSettings
 {
     public string Theme { get; init; } = "Dark";
+    public bool EnableAnimations { get; init; } = true;
     public int DefaultVolume { get; init; } = 80;
     public int SeekIntervalSeconds { get; init; } = 10;
     public double PlaybackSpeed { get; init; } = 1;

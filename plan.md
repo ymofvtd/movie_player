@@ -1766,22 +1766,24 @@ The user can correct incorrectly detected library items and those corrections su
 
 Tasks:
 
-- [ ] Finalize dark theme.
-- [ ] Improve navigation.
-- [ ] Refine movie cards.
-- [ ] Add hover effects.
-- [ ] Add skeleton/loading states.
-- [ ] Improve empty states.
-- [ ] Improve error messages.
-- [ ] Add tooltips.
-- [ ] Improve keyboard navigation.
-- [ ] Test display scaling.
-- [ ] Optimize artwork caching.
-- [ ] Add optional animations.
+- [x] Finalize dark theme.
+- [x] Improve navigation.
+- [x] Refine movie cards.
+- [x] Add hover effects.
+- [x] Add skeleton/loading states.
+- [x] Improve empty states.
+- [x] Improve error messages.
+- [x] Add tooltips.
+- [x] Improve keyboard navigation.
+- [x] Test display scaling.
+- [x] Optimize artwork caching.
+- [x] Add optional animations.
 
 **Completion Criteria:**
 
 The application is comfortable to navigate with mouse and keyboard and looks consistent across all pages.
+
+**Implemented and tested 2026-11-09:** Consistent dark dropdowns, scrollbars, tooltips, checkboxes, expanders, seek/volume sliders, and stable focus outlines complement refined cards, unavailable badges, accessible descriptions, and hover/press feedback. Home rows link to full sections. Ctrl+F selects library search, Escape clears it, Alt+Left navigates back, and F6 switches navigation/content focus without changing the selected destination. Focused controls retain Space/arrow behavior while letter playback shortcuts remain available from buttons. Loading skeletons suppress misleading empty states; contextual recovery actions distinguish new libraries, unmatched searches, and empty Continue Watching. Refresh errors expose retry and retain loaded cards. Frozen artwork is shared in a bounded 32 MiB/128-entry LRU with file-stamp invalidation, corrupt-image fallback caching, released file handles, and 480×960 decode limits. Optional 140 ms page fades respect Windows motion settings and an appearance preference saved without changing playback settings; no schema migration is required. The isolated Release build has zero warnings/errors and all 147 tests pass. WPF checks exercise actual slider-thumb/key events and render library layouts at widths 604/956 and 100%/125%/150%/200% DPI, with details, Settings, and player at all four scales, plus loading/error/empty renders. Screenshots are under `.artifacts/phase9-final/bin/MyCinema.Tests/release/Artifacts`; the final executable is under `.artifacts/phase9-final/bin/Person Movie Player/release`. Desktop verification launched an intermediate build, but window binding failed twice because the tool assigned the new and original processes the same application identity; automated input stopped. Live shortcuts, mouse/keyboard comfort, physical monitor DPI transitions/native video scaling, and earlier Phases 5–8 desktop acceptance remain pending for release. Next: Phase 10 — Testing and Release.
 
 ### Phase 10 — Testing and Release
 
@@ -2124,4 +2126,4 @@ After that milestone is verified, continue with library scanning and organizatio
 **Project:** MyCinema  
 **Document:** PROJECT_PLAN.md  
 **Version:** 1.0  
-**Status:** Phase 8 implemented and tested; live desktop acceptance for Phases 5–8 pending / Next implementation: Phase 9 — Interface Polish.
+**Status:** Phase 9 implemented and tested; live desktop acceptance for Phases 5–9 pending / Next: Phase 10 — Testing and Release.

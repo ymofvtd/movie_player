@@ -17,9 +17,10 @@ public sealed partial class SettingsViewModel : PageViewModel
     private readonly ILibraryScannerService _scanner;
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger<SettingsViewModel> _logger;
+    private readonly ISettingsService? _settings;
 
     public SettingsViewModel(IApplicationPaths paths, ILibraryRepository library, ILibraryScannerService scanner,
-        IUiDispatcher dispatcher, ILogger<SettingsViewModel> logger)
+        IUiDispatcher dispatcher, ILogger<SettingsViewModel> logger, ISettingsService? settings = null)
         : base("Settings", "Your cinema, on your computer.")
     {
         _paths = paths;
@@ -27,6 +28,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         _scanner = scanner;
         _dispatcher = dispatcher;
         _logger = logger;
+        _settings = settings;
+        SaveAppearanceCommand = new AsyncRelayCommand(SaveAppearanceAsync, () => _settings is not null);
         ScanCommand = new AsyncRelayCommand(ScanAsync);
         CancelScanCommand = new RelayCommand(() =>
         {
@@ -41,6 +44,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     public string LogsDirectory => _paths.LogsDirectory;
     public IAsyncRelayCommand ScanCommand { get; }
     public IRelayCommand CancelScanCommand { get; }
+    public IAsyncRelayCommand SaveAppearanceCommand { get; }
+    [ObservableProperty] private bool _enableAnimations = true;
+    [ObservableProperty] private string _appearanceMessage = "";
     public event EventHandler? LibraryChanged;
 
     [ObservableProperty] private string _libraryRoots = "Loading library folders…";
@@ -57,8 +63,24 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        if (_settings is not null) EnableAnimations = (await _settings.LoadAsync(cancellationToken)).EnableAnimations;
         await _scanner.ConfigureDefaultRootAsync(cancellationToken);
         await RefreshAsync(cancellationToken);
+    }
+
+    private async Task SaveAppearanceAsync()
+    {
+        try
+        {
+            var current = await _settings!.LoadAsync();
+            await _settings.SaveAsync(current with { EnableAnimations = EnableAnimations });
+            AppearanceMessage = "Appearance saved.";
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "Could not save appearance settings");
+            AppearanceMessage = "Could not save appearance. Check that the application data folder is writable, then try again.";
+        }
     }
 
     private async Task ScanAsync(CancellationToken cancellationToken)
@@ -140,6 +162,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         ScanCommand.Cancel();
         if (ScanCommand.ExecutionTask is { } task) await task;
+        if (SaveAppearanceCommand.ExecutionTask is { } save) await save;
     }
 
     private sealed class UiScanProgress(Action<ScanProgress> report) : IProgress<ScanProgress>

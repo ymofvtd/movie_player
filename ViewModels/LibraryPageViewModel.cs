@@ -4,6 +4,7 @@ using MyCinema.Core.Interfaces;
 using MyCinema.Core.Models;
 using MyCinema.Core.Navigation;
 using Person_Movie_Player.Services;
+using System.ComponentModel;
 
 namespace Person_Movie_Player.ViewModels;
 
@@ -29,7 +30,14 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
             LoadMoreCommand!.NotifyCanExecuteChanged();
         }, () => HasMore);
         ViewSettingsCommand = new RelayCommand(() => navigation.NavigateTo(NavigationDestination.Settings));
+        EmptyActionCommand = new RelayCommand(() =>
+        {
+            if (HasFilters) ResetFilters();
+            else if (_destination == NavigationDestination.ContinueWatching) navigation.NavigateTo(NavigationDestination.Movies);
+            else navigation.NavigateTo(NavigationDestination.Settings);
+        });
         Store.Changed += OnCatalogChanged;
+        Store.PropertyChanged += OnStorePropertyChanged;
         OnCatalogChanged(this, EventArgs.Empty);
     }
     public LibraryStore Store { get; }
@@ -42,6 +50,7 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
     public IRelayCommand ResetFiltersCommand { get; }
     public IRelayCommand LoadMoreCommand { get; }
     public IRelayCommand ViewSettingsCommand { get; }
+    public IRelayCommand EmptyActionCommand { get; }
     public virtual IAsyncRelayCommand? OpenFileCommand => null;
     public Task PendingUpdate { get; private set; } = Task.CompletedTask;
     [ObservableProperty] private string _searchText = "";
@@ -58,6 +67,24 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
     [ObservableProperty] private bool _isEmpty;
     [ObservableProperty] private string _resultSummary = "Loading your library…";
     [ObservableProperty] private string _emptyMessage = "Scan your folders in Settings to build your library.";
+    [ObservableProperty] private string _emptyTitle = "Your library starts here";
+    [ObservableProperty] private string _emptyActionLabel = "Scan folders in Settings";
+    [ObservableProperty] private bool _isQuerying;
+    public bool HasFilters => SearchText.Trim().Length > 0 || TypeFilter != "All types" ||
+        AvailabilityFilter != "All availability" || WatchFilter != "All watch states" || YearFilter != "All years";
+    public bool IsBusy => Store.IsLoading || IsQuerying;
+    public bool HasError => !string.IsNullOrEmpty(Store.ErrorMessage);
+    public bool ShowSkeleton => !HasError && (!Store.HasLoaded || IsBusy && DisplayCards.Count == 0);
+    public bool ShowEmpty => Store.HasLoaded && IsEmpty && !IsBusy && !HasError;
+    private void NotifyStatus()
+    {
+        OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(HasError));
+        OnPropertyChanged(nameof(ShowSkeleton));
+        OnPropertyChanged(nameof(ShowEmpty));
+    }
+    partial void OnIsQueryingChanged(bool value) => NotifyStatus();
+    private void OnStorePropertyChanged(object? sender, PropertyChangedEventArgs e) => NotifyStatus();
     public bool ShowCards => !ShowSections;
     public bool ShowYearFilter => Years.Count > 1;
     public bool HasMore => DisplayCards.Count < Cards.Count;
@@ -101,6 +128,8 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
         var sort = Sort;
         var useSections = IsHome && query.Length == 0 && type == "All types" && available == "All availability" &&
             watch == "All watch states" && year == "All years" && sort == "Title A–Z";
+        IsQuerying = true;
+        OnPropertyChanged(nameof(HasFilters));
         try
         {
             // Debounce typing and perform filtering/card projection on a worker.
@@ -140,19 +169,23 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
                 var sections = new List<LibrarySection>();
                 if (useSections)
                 {
-                    void Add(string title, IEnumerable<MediaCardViewModel> values)
+                    void Add(string title, IEnumerable<MediaCardViewModel> values, NavigationDestination destination)
                     {
                         var group = values.Take(8).ToArray();
-                        if (group.Length > 0) sections.Add(new(title, group));
+                        if (group.Length > 0) sections.Add(new(title, group, new RelayCommand(() =>
+                        {
+                            if (title == "Uncategorized") { ResetFilters(); TypeFilter = "Uncategorized"; }
+                            else _navigation.NavigateTo(destination);
+                        })));
                     }
                     Add("Continue Watching", catalog.ContinueWatchingFiles.Select(f => f.LibraryItemId).Distinct()
-                        .Where(catalog.Items.ContainsKey).Select(id => new MediaCardViewModel(catalog.Items[id], catalog, _navigation, true)));
+                        .Where(catalog.Items.ContainsKey).Select(id => new MediaCardViewModel(catalog.Items[id], catalog, _navigation, true)), NavigationDestination.ContinueWatching);
                     Add("Recently added", cards.Where(c => c.Item.ItemType is LibraryItemType.Movie or LibraryItemType.Show)
-                        .OrderByDescending(c => c.Item.CreatedUtc));
-                    Add("Movies", cards.Where(c => c.Item.ItemType == LibraryItemType.Movie));
-                    Add("TV Shows", cards.Where(c => c.Item.ItemType == LibraryItemType.Show));
-                    Add("Franchises", cards.Where(c => c.Item.ItemType == LibraryItemType.Franchise));
-                    Add("Uncategorized", cards.Where(c => c.Item.ItemType == LibraryItemType.Uncategorized));
+                        .OrderByDescending(c => c.Item.CreatedUtc), NavigationDestination.RecentlyAdded);
+                    Add("Movies", cards.Where(c => c.Item.ItemType == LibraryItemType.Movie), NavigationDestination.Movies);
+                    Add("TV Shows", cards.Where(c => c.Item.ItemType == LibraryItemType.Show), NavigationDestination.Shows);
+                    Add("Franchises", cards.Where(c => c.Item.ItemType == LibraryItemType.Franchise), NavigationDestination.Franchises);
+                    Add("Uncategorized", cards.Where(c => c.Item.ItemType == LibraryItemType.Uncategorized), NavigationDestination.Home);
                 }
                 return (Cards: cards, Sections: sections);
             }, token);
@@ -165,14 +198,24 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
             ShowSections = useSections;
             IsEmpty = Cards.Count == 0;
             ResultSummary = $"{Cards.Count} {(Cards.Count == 1 ? "item" : "items")}";
-            EmptyMessage = _destination == NavigationDestination.ContinueWatching ? "Nothing to resume yet. Unfinished movies and episodes appear here after 5% watched."
+            EmptyTitle = HasFilters ? "No matching titles" : _destination == NavigationDestination.ContinueWatching
+                ? "Ready when you are" : catalog.Items.Count == 0 ? "Your library starts here" : $"No {Title.ToLowerInvariant()} yet";
+            EmptyActionLabel = HasFilters ? "Clear search and filters" : _destination == NavigationDestination.ContinueWatching
+                ? "Browse movies" : "Scan folders in Settings";
+            EmptyMessage = HasFilters ? "Try a different title or clear your search and filters."
+                : _destination == NavigationDestination.ContinueWatching ? "Unfinished movies and episodes appear here after 5% watched. Choose something to start watching."
                 : catalog.Items.Count == 0 ? "Scan your folders in Settings to build your library."
-                : "No items match this view. Try another search or reset the filters.";
+                : "Scan your library folders in Settings to discover more titles. You can correct a title's classification on its details page.";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         finally
         {
-            if (ReferenceEquals(_queryCancellation, source)) _queryCancellation = null;
+            if (ReferenceEquals(_queryCancellation, source))
+            {
+                _queryCancellation = null;
+                IsQuerying = false;
+                NotifyStatus();
+            }
             source.Dispose();
         }
     }
@@ -192,6 +235,7 @@ public partial class LibraryPageViewModel : PageViewModel, IDisposable
     {
         _disposed = true;
         Store.Changed -= OnCatalogChanged;
+        Store.PropertyChanged -= OnStorePropertyChanged;
         _queryCancellation?.Cancel();
     }
 }

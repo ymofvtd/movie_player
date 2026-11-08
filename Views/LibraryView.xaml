@@ -1,24 +1,28 @@
 <UserControl x:Class="Person_Movie_Player.Views.LibraryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="clr-namespace:Person_Movie_Player.Services"
+             services:UiMotion.FadeOnLoad="True" UseLayoutRounding="True"
+             KeyboardNavigation.DirectionalNavigation="Contained">
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <StackPanel>
             <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12,9">
+                <Border Background="{DynamicResource SurfaceBrush}" BorderThickness="1" CornerRadius="6" Padding="12,9">
+                    <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" /><Style.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger></Style.Triggers></Style></Border.Style>
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Left" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
                         <Grid>
-                            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
-                                     AutomationProperties.Name="Search library" ToolTip="Search titles, shows, collections and episodes" />
+                            <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
+                                     AutomationProperties.Name="Search library" ToolTip="Search titles, shows, collections and episodes (Ctrl+F). Escape clears search." PreviewKeyDown="OnSearchKeyDown" />
                             <TextBlock Text="Search your library…" IsHitTestVisible="False" Foreground="{DynamicResource SecondaryTextBrush}" Margin="2,0,0,0">
                                 <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding SearchText}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                             </TextBlock>
                         </Grid>
                     </DockPanel>
                 </Border>
-                <Button Grid.Column="1" Content="Refresh" Command="{Binding Store.RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" />
+                <Button Grid.Column="1" Content="Refresh" Command="{Binding Store.RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" ToolTip="Reload the saved catalog. To discover new files, scan in Settings." />
             </Grid>
             <WrapPanel Margin="0,0,0,4">
                 <ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding TypeFilter}" Style="{StaticResource LibraryComboStyle}" Width="130" Margin="0,0,8,8" AutomationProperties.Name="Media type"
@@ -27,11 +31,15 @@
                 <ComboBox ItemsSource="{Binding WatchOptions}" SelectedItem="{Binding WatchFilter}" Style="{StaticResource LibraryComboStyle}" Width="155" Margin="0,0,8,8" AutomationProperties.Name="Watch state filter" />
                 <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding YearFilter}" Style="{StaticResource LibraryComboStyle}" Width="112" Margin="0,0,8,8" AutomationProperties.Name="Release year filter" Visibility="{Binding ShowYearFilter, Converter={StaticResource BooleanToVisibility}}" />
                 <ComboBox ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" Style="{StaticResource LibraryComboStyle}" Width="163" Margin="0,0,8,8" AutomationProperties.Name="Sort library" />
-                <Button Content="Reset" Command="{Binding ResetFiltersCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="12,8" Margin="0,0,0,8" />
+                <Button Content="Reset" Command="{Binding ResetFiltersCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="12,8" Margin="0,0,0,8" ToolTip="Clear the search, filters, and sort order" />
             </WrapPanel>
-            <TextBlock Text="{Binding ResultSummary}" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,14" />
-            <TextBlock Text="Loading your library…" Foreground="{DynamicResource AccentHoverBrush}" Margin="0,0,0,12" Visibility="{Binding Store.IsLoading, Converter={StaticResource BooleanToVisibility}}" />
-            <TextBlock Text="{Binding Store.ErrorMessage}" Foreground="#F5B7B7" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <DockPanel Margin="0,0,0,14">
+                <TextBlock DockPanel.Dock="Right" Text="Updating…" Foreground="{DynamicResource AccentHoverBrush}" FontSize="12" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibility}}" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock Text="{Binding ResultSummary}" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
+            <Border x:Name="LibraryError" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource ErrorTextBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,14" Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibility}}">
+                <DockPanel><Button DockPanel.Dock="Right" Content="Try again" Command="{Binding Store.RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="16,0,0,0" VerticalAlignment="Center" /><TextBlock Text="{Binding Store.ErrorMessage}" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" /></DockPanel>
+            </Border>
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
@@ -45,7 +53,7 @@
                 <ItemsControl ItemsSource="{Binding Sections}" Visibility="{Binding ShowSections, Converter={StaticResource BooleanToVisibility}}">
                     <ItemsControl.ItemTemplate><DataTemplate>
                         <StackPanel Margin="0,0,0,22">
-                            <TextBlock Text="{Binding Title}" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,14" />
+                            <DockPanel Margin="0,0,14,14"><Button DockPanel.Dock="Right" Content="View all →" Command="{Binding BrowseCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" ToolTip="{Binding Title, StringFormat=Browse all {0}}" /><TextBlock Text="{Binding Title}" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
                             </ScrollViewer>
@@ -56,8 +64,16 @@
                     <ItemsControl ItemsSource="{Binding DisplayCards}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
                     <Button Content="Show more" Command="{Binding LoadMoreCommand}" Visibility="{Binding HasMore, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Center" Margin="0,8,0,16" />
                 </StackPanel>
-                <Border Style="{StaticResource CardStyle}" Margin="0,10,14,0" Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibility}}">
-                    <StackPanel><TextBlock Text="Nothing here yet" FontSize="21" FontWeight="SemiBold" /><TextBlock Text="{Binding EmptyMessage}" TextWrapping="Wrap" Margin="0,10,0,18" Foreground="{DynamicResource SecondaryTextBrush}" /><Button Content="View settings" Command="{Binding ViewSettingsCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
+                <StackPanel x:Name="LoadingSkeleton" IsHitTestVisible="False" Focusable="False" Visibility="{Binding ShowSkeleton, Converter={StaticResource BooleanToVisibility}}" AutomationProperties.Name="Loading library">
+                    <TextBlock Text="Finding your next watch…" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,18" />
+                    <WrapPanel>
+                        <Border Width="170" Height="330" Background="{DynamicResource SurfaceBrush}" CornerRadius="9" Margin="3,3,11,13"><StackPanel><Border Height="240" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="9,9,0,0" /><Border Height="10" Margin="14,18,24,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /><Border Height="8" Margin="14,12,60,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /></StackPanel></Border>
+                        <Border Width="170" Height="330" Background="{DynamicResource SurfaceBrush}" CornerRadius="9" Margin="3,3,11,13"><StackPanel><Border Height="240" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="9,9,0,0" /><Border Height="10" Margin="14,18,24,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /><Border Height="8" Margin="14,12,60,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /></StackPanel></Border>
+                        <Border Width="170" Height="330" Background="{DynamicResource SurfaceBrush}" CornerRadius="9" Margin="3,3,11,13"><StackPanel><Border Height="240" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="9,9,0,0" /><Border Height="10" Margin="14,18,24,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /><Border Height="8" Margin="14,12,60,0" Background="{DynamicResource ElevatedSurfaceBrush}" CornerRadius="3" /></StackPanel></Border>
+                    </WrapPanel>
+                </StackPanel>
+                <Border x:Name="EmptyState" Style="{StaticResource CardStyle}" Margin="3,10,14,0" Visibility="{Binding ShowEmpty, Converter={StaticResource BooleanToVisibility}}">
+                    <StackPanel><TextBlock Text="&#xE8B2;" FontFamily="Segoe MDL2 Assets" FontSize="30" Foreground="{DynamicResource AccentHoverBrush}" Margin="0,0,0,16" /><TextBlock Text="{Binding EmptyTitle}" FontSize="21" FontWeight="SemiBold" /><TextBlock Text="{Binding EmptyMessage}" TextWrapping="Wrap" Margin="0,10,0,18" Foreground="{DynamicResource SecondaryTextBrush}" /><Button Content="{Binding EmptyActionLabel}" Command="{Binding EmptyActionCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
                 </Border>
             </StackPanel>
         </ScrollViewer>

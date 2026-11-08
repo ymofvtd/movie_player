@@ -28,6 +28,7 @@ public sealed partial class LibraryStore : ObservableObject, IDisposable
     }
     [ObservableProperty] private LibraryCatalog _catalog = new(LibrarySnapshot.Empty);
     [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private bool _hasLoaded;
     [ObservableProperty] private string _errorMessage = "";
     public IAsyncRelayCommand RefreshCommand { get; }
     public event EventHandler? Changed;
@@ -51,6 +52,7 @@ public sealed partial class LibraryStore : ObservableObject, IDisposable
                 _refreshAgain = false;
                 var snapshot = await _repository.GetSnapshotAsync();
                 Catalog = await Task.Run(() => new LibraryCatalog(snapshot));
+                HasLoaded = true;
                 if (!_disposed) Changed?.Invoke(this, EventArgs.Empty);
             } while (_refreshAgain && !_disposed);
         }

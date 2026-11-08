@@ -5,9 +5,12 @@
     <SolidColorBrush x:Key="SurfaceBrush" Color="#1B1B22" />
     <SolidColorBrush x:Key="ElevatedSurfaceBrush" Color="#25252E" />
     <SolidColorBrush x:Key="TextBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#A0A0AC" />
+    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#B0B0BD" />
     <SolidColorBrush x:Key="AccentBrush" Color="#8B5CF6" />
     <SolidColorBrush x:Key="AccentHoverBrush" Color="#9D75F8" />
     <SolidColorBrush x:Key="AccentSurfaceBrush" Color="#29213E" />
     <SolidColorBrush x:Key="BorderBrush" Color="#33333D" />
+    <SolidColorBrush x:Key="FocusBrush" Color="#C4B5FD" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#F5C58B" />
+    <SolidColorBrush x:Key="ErrorTextBrush" Color="#F5B7B7" />
 </ResourceDictionary>

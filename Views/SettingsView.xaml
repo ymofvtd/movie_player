@@ -3,6 +3,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Person_Movie_Player.ViewModels">
     <StackPanel>
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Appearance" FontSize="20" FontWeight="SemiBold" />
+                <CheckBox Content="Enable page animations" IsChecked="{Binding EnableAnimations}" Margin="0,18,0,12" ToolTip="Use a short fade when opening library pages. Windows animation preferences also apply." />
+                <TextBlock Text="Dark theme · Clear focus outlines · Artwork kept on this device" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                <Button Content="Save appearance" Command="{Binding SaveAppearanceCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,16,0,0" />
+                <TextBlock Text="{Binding AppearanceMessage}" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+        </Border>
         <Border Style="{StaticResource CardStyle}">
             <StackPanel>
                 <TextBlock Text="Library" FontSize="20" FontWeight="SemiBold" />
@@ -12,9 +21,9 @@
                 <TextBlock Text="Scan your folders to discover movies, shows, and franchise candidates."
                            Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,14,0,0" TextWrapping="Wrap" />
                 <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-                    <Button Content="Scan library" Command="{Binding ScanCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                    <Button Content="Scan library" Command="{Binding ScanCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="Discover new files and update availability while keeping watch progress and manual edits" />
                     <Button Content="Cancel scan" Command="{Binding CancelScanCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" />
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" ToolTip="Keep completed folders and stop scanning the current folder" />
                 </StackPanel>
                 <ProgressBar IsIndeterminate="True" Height="4" Margin="0,18,0,0"
                              Foreground="{DynamicResource AccentBrush}"
@@ -40,7 +49,7 @@
                 <TextBlock Text="Detected library" FontSize="20" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding LibrarySummary}" Foreground="{DynamicResource SecondaryTextBrush}"
                            TextWrapping="Wrap" Margin="0,12,0,16" />
-                <TextBlock Text="Expand an item to review its detected organization. Library browsing comes next."
+                <TextBlock Text="Expand an item to review its organization. Use Movies, TV Shows, or Franchises to browse and edit titles."
                            Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
                 <TreeView ItemsSource="{Binding PreviewItems}" Background="Transparent" BorderThickness="0"
                           Foreground="{DynamicResource TextBrush}" MaxHeight="320"
@@ -65,6 +74,12 @@
                 <TextBlock Text="{Binding ApplicationDataDirectory}" FontFamily="Consolas" TextWrapping="Wrap" />
                 <TextBlock Text="Diagnostic logs" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,20,0,8" />
                 <TextBlock Text="{Binding LogsDirectory}" FontFamily="Consolas" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0">
+            <StackPanel>
+                <TextBlock Text="Keyboard navigation" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Ctrl+F  Search the current library view&#x0a;Ctrl+O  Open a local video&#x0a;Alt+Left  Go back&#x0a;F6  Switch between navigation and page content&#x0a;Tab / Shift+Tab  Move between controls&#x0a;Arrow keys  Browse cards, lists, and choices&#x0a;Enter / Space  Activate a focused button" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" LineHeight="24" Margin="0,14,0,0" />
             </StackPanel>
         </Border>
         <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0">

@@ -260,7 +260,7 @@ public sealed class LibraryBrowserTests : IDisposable
         var movies = await Page(NavigationDestination.Movies);
         movies.SearchText = "does not exist";
         await movies.PendingUpdate;
-        Assert.Contains("reset", movies.EmptyMessage);
+        Assert.Contains("clear", movies.EmptyMessage);
         using var empty = new LibraryStoreProvider(Path.Combine(_directory, "empty"));
         await empty.Store.RefreshAsync();
         using var page = new LibraryPageViewModel("Movies", "", NavigationDestination.Movies, empty.Store, Navigation);

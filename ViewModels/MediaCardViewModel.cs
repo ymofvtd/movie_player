@@ -53,11 +53,12 @@ public sealed class MediaCardViewModel
     public string ProgressLabel { get; }
     public bool IsAvailable { get; }
     public string Availability => IsAvailable ? "Available" : "Unavailable";
+    public string AccessibleDescription => $"{Title}. {Kind}. {Subtitle}. {Availability}. {WatchState}. {ProgressLabel}";
     public IRelayCommand OpenCommand { get; }
     public override string ToString() => Title;
 }
 
-public sealed record LibrarySection(string Title, IReadOnlyList<MediaCardViewModel> Cards)
+public sealed record LibrarySection(string Title, IReadOnlyList<MediaCardViewModel> Cards, IRelayCommand? BrowseCommand = null)
 {
     public override string ToString() => Title;
 }

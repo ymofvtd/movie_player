@@ -4,15 +4,15 @@ A native, offline-first Windows application for a personal movie and TV library,
 
 ## Current milestone
 
-**Phase 8 — Manual Organization is implemented and tested.** Movies, shows, and franchises support automatic folder posters, chosen local posters, metadata editing, and classification corrections. Franchise management, duplicate merging, and separating incorrectly grouped files retain file identities and watch progress through restarts and rescans. Live desktop acceptance for Phases 5–8 remains pending.
+**Phase 9 — Interface Polish is implemented and tested.** The library has loading skeletons, contextual empty states, retry guidance, Home section links, and clearer cards. Dark controls, hover/focus feedback, navigation shortcuts, bounded artwork caching, and optional page fades apply across the interface. Live desktop acceptance for Phases 5–9 remains pending.
 
-Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning and the Settings hierarchy preview remain available. Editable preferences belong to later phases.
+Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning, manual organization, and the Settings hierarchy preview remain available. Settings includes a saved appearance preference; editing the remaining playback preferences is still pending.
 
-The next implementation phase is **Phase 9 — Interface Polish**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
+The next phase is **Phase 10 — Testing and Release**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
 
 ## Browsing and playing your library
 
-- **Home** shows recent additions, movies, TV shows, franchises, and any uncategorized videos. Each row previews up to eight titles; use the sidebar to browse the full section or use Home search/type filters.
+- **Home** shows recent additions, movies, TV shows, franchises, and any uncategorized videos. Each row previews up to eight titles; **View all →** opens its full section, including the Uncategorized filter.
 - **Movies** includes standalone films and films inside collections. **Franchises** opens a collection's movies in the saved folder/ordinal order. Collection folders themselves are never playable.
 - **TV Shows** opens show details with a season selector and an episode list ordered by numeric season/episode numbers. Multi-episode files show their episode range. Select an episode to open its file details.
 - Open a movie or episode, choose its file/edition, and press **Play**. File paths, format, cached runtime, and size help distinguish editions and parts. Runtime shows as unknown when it has not been cached. **Back** returns through details to the original listing, retaining search/filter values and season/file selections during this session.
@@ -23,6 +23,12 @@ The next implementation phase is **Phase 9 — Interface Polish**. See [plan.md]
 
 Search is debounced and runs on a worker against an indexed catalog. SQLite loads items, files, and progress in one consistent read transaction. Listings initially create 60 cards, with **Show more** loading another 60; Home rows are bounded previews. Cards display assigned posters with offline fallback artwork. Scans automatically reload the browser; **Refresh** reloads the saved database without rescanning media. The saved catalog loads again on startup.
 
+Loading placeholders appear before results arrive. Empty views distinguish a new library, a search with no matches, and an empty Continue Watching list, with actions to scan, clear filters, or browse movies. Refresh errors offer **Try again** and retain any already loaded catalog. Unavailable cards stay browsable and show an availability badge.
+
+Use **Ctrl+F** to focus and select the current library search, **Escape** in search to clear it, **Alt+Left** to go back, and **F6** to move between navigation and page content. **Tab / Shift+Tab**, arrow keys, and **Enter / Space** navigate and activate controls. Focus outlines remain visible in the dark theme. Focused player sliders, buttons, and episode lists keep their normal Space/arrow behavior; letter shortcuts such as **F** still work from buttons.
+
+Under **Settings → Appearance**, toggle **Enable page animations** to preview a short page fade, then **Save appearance** to keep the choice after restart. Windows' client-area animation preference also controls whether fades play. Animations affect library/details pages; the native video surface remains in place.
+
 ## Posters and manual organization
 
 Put **poster.png** in a movie folder, a show's top-level folder, or a franchise's top-level folder, then use **Settings → Scan library**. The scanner picks it up automatically. It also recognizes **poster.jpg** and **poster.jpeg**, in that priority order after PNG; names are case-insensitive on Windows. For example, `Interstellar (2014)\poster.png` appears on the movie's card and details, and `Loki\poster.png` applies to the show. Each movie inside a franchise can have its own poster. Folder images stay in place; replacing or removing them is reflected on the next scan. Live filesystem monitoring remains a later feature.
@@ -30,6 +36,8 @@ Put **poster.png** in a movie folder, a show's top-level folder, or a franchise'
 For a separate image, open the title and select **Choose poster…**. Pick a local JPG, PNG, BMP, GIF, or TIFF image (up to 32 MB). MyCinema stores a decoded PNG copy under `%LOCALAPPDATA%\MyCinema\Cache\Posters`, so moving or deleting the chosen source does not remove it. A chosen poster takes priority over folder artwork. **Use folder poster** clears that choice and returns to automatic folder artwork. **Remove poster** explicitly hides artwork until you choose another poster or use folder artwork again. Changes save immediately and survive restarts and rescans.
 
 Artwork appears on portrait library cards and details; episode cards can inherit their show's poster. Missing or unreadable images fall back safely. The app makes no artwork network requests.
+
+Decoded thumbnails are shared across Home rows, cards, and details in a memory cache capped at 32 MiB and 128 entries. Thumbnails fit within 480×960 pixels, release their source-file handles, and reload when file size or modification time changes. Invalid files are cached as fallbacks until their stamp changes. Disk poster copies are retained independently of this memory cache.
 
 Expand **Edit details & organization** on the details page to change a title, release year, description, or classification. Episode details also let you choose its show, season, episode number, and optional range endpoint. **Save details** commits metadata; **Cancel** discards the draft. A movie's franchise selector reassigns it or returns it to the standalone library.
 
@@ -82,13 +90,13 @@ dotnet run --project "Person Movie Player.csproj" --configuration Release
 
 Close an application instance before rebuilding its configuration so Windows can replace the executable and assemblies.
 
-Phase 8 was also built separately while the existing Release app stayed open:
+Phase 9 was built separately while the existing Release app stayed open:
 
 ```powershell
-dotnet build "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase8
-dotnet test "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase8 --no-build --no-restore
+dotnet build "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase9-final
+dotnet test "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase9-final --no-build --no-restore
 # Close the old application before opening the updated build.
-& ".\.artifacts\phase8\bin\Person Movie Player\release\MyCinema.App.exe"
+& ".\.artifacts\phase9-final\bin\Person Movie Player\release\MyCinema.App.exe"
 ```
 
 Alternatively, open `Person Movie Player.slnx` in Visual Studio, select the root WPF project as the startup project, and press F5. Both AnyCPU and x64 solution configurations compile the projects for x64, as configured in `Directory.Build.props`.
@@ -196,6 +204,8 @@ To recover from a damaged database, close MyCinema and preserve a copy of the en
 
 Verified on Windows on 2026-11-09 (earlier milestone checks were on 2026-11-08):
 
+- Phase 9: the isolated Release solution builds with zero warnings/errors and all 147 tests pass. New presentation tests cover first-load/failure/retry state transitions, retaining cached cards on refresh failure, contextual recovery commands, rapid query replacement, Home links, and saving/reopening the animation preference without resetting playback settings. WPF checks cover shared/frozen poster reuse, released source handles, replacement/removal/corrupt-image recovery, LRU eviction and byte limits, oversized dimensions, and reduced-motion behavior. Actual slider-thumb events update the seek binding; routed key events preserve focused-button Space and the F shortcut.
+- Actual WPF library layouts render at widths 604 and 956 at 100%, 125%, 150%, and 200% DPI; details, Settings, and player render at all four scales. Controls, popup template parts, card bounds, accessibility descriptions, and mutually exclusive loading/empty/error states are asserted. PNGs are under `.artifacts/phase9-final/bin/MyCinema.Tests/release/Artifacts`. This follows Microsoft's [WPF DPI rendering guidance](https://github.com/microsoft/WPF-Samples/blob/main/PerMonitorDPI/readme.md). Physical monitor transitions and native video scaling still require desktop acceptance. The desktop tool launched the intermediate Phase 9 build but assigned both application instances the same app identity and refused to bind the new window; live input checks stopped after recovery also failed. The original application was left open. The final executable is in the isolated `phase9-final` output above.
 - Phase 8: Debug and isolated Release builds succeed with zero warnings/errors. All 144 tests pass in Release. Nineteen new organization cases cover metadata/artwork persistence, all six Movie/Show/Franchise conversions, stable per-file progress, repeated rescans, newly added children, naming changes without duplicate seasons/items, franchise ordering/reassignment/removal, duplicate merging, file separation, episode reparenting/ranges, invalid-write rollback, cancellation, editor validation, and v2 migration. Six additional folder-artwork cases cover movie/show/franchise roots, restart persistence, episode inheritance, PNG/JPG/JPEG precedence, addition/replacement/removal through rescans, metadata/progress preservation, explicit poster/removal priority, returning to folder artwork, converted playable children, and v3 migration preserving existing manual artwork.
 - WPF checks use the actual poster picker command with an injected file choice, import an image into the cache, delete its source, reopen the database, and verify image bindings on movie/show/franchise cards and details. They render expanded editors at 604 and 956 pixels wide, check poster removal, corrupt/missing/remote-image fallback, and retaining the original target if navigation changes during import. Images are written under the test output's `Artifacts` directory. The running application was left uninterrupted; live file-picker and organization acceptance remain pending.
 - Phase 7: Release builds with zero warnings/errors; all 119 tests pass. New cases exercise all seven speed values and all four picture ratios against native VLC, invalid option rejection, reset to Original, pause/seek continuity, Stop/replay, file switching on the same player, and recoverable error details/dismissal. Five generated MKV, MP4, MOV, AVI, and WMV fixtures must decode video frames, seek, pause/resume, and accept speed changes. These cover H.264/AAC, MPEG-4 Visual/MP3, and WMV2/WMA2; they do not establish support for every codec combination.

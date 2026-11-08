@@ -26,6 +26,9 @@ public static class PlayerKeyboard
             return;
         }
         if (!playerVisible || Keyboard.Modifiers != ModifierKeys.None) return;
+        // Let focused controls retain Space/arrow/Enter behavior (including episode lists and sliders).
+        if (e.Key is Key.Space or Key.Left or Key.Right or Key.Up or Key.Down &&
+            OwnsNavigationKeys(e.OriginalSource as DependencyObject)) return;
 
         System.Windows.Input.ICommand? command = e.Key switch
         {
@@ -50,6 +53,16 @@ public static class PlayerKeyboard
             player.AdjustVolume(e.Key == Key.Up ? 5 : -5);
             e.Handled = true;
         }
+    }
+
+    public static bool OwnsNavigationKeys(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is TextBoxBase or PasswordBox or ComboBox or ButtonBase or Slider or ListBoxItem or TreeViewItem) return true;
+            element = element is Visual ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
+        }
+        return false;
     }
 
     private static bool IsOpenComboBox(DependencyObject? element)
