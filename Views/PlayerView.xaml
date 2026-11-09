@@ -4,12 +4,27 @@
              xmlns:views="clr-namespace:Person_Movie_Player.Views"
              Loaded="OnLoaded" Unloaded="OnUnloaded" IsVisibleChanged="OnVisibilityChanged"
              PreviewMouseMove="OnPlayerMouseMove" PreviewMouseDown="OnPlayerInteraction" PreviewKeyDown="OnPlayerInteraction">
-    <Grid Background="Black">
+    <Grid x:Name="PlayerLayout" Background="Black">
+        <!-- The native viewport never participates in the controls' row sizing. -->
+        <Grid x:Name="VideoHost" ClipToBounds="True">
+            <StackPanel x:Name="IdleMessage" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24">
+                <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="42" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource AccentBrush}" />
+                <TextBlock Text="Open a local video to begin" FontSize="20" Margin="0,20,0,8" TextAlignment="Center" />
+                <TextBlock Text="MKV, MP4, and more  ·  Ctrl+O" Foreground="{DynamicResource SecondaryTextBrush}" TextAlignment="Center" />
+            </StackPanel>
+        </Grid>
+        <!-- Hosted in VideoView.Content during playback to render above VLC's native window. -->
+        <Grid x:Name="PlayerOverlay" Background="#02000000" Focusable="True"
+              TextElement.Foreground="{DynamicResource TextBrush}" TextElement.FontFamily="Segoe UI" TextElement.FontSize="14"
+              UseLayoutRounding="True" SnapsToDevicePixels="True"
+              MouseLeftButtonDown="OnVideoMouseDown" PreviewKeyDown="OnVideoKeyDown"
+              PreviewMouseDown="OnPlayerInteraction" MouseMove="OnPlayerMouseMove">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" /><RowDefinition Height="*" />
             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border x:Name="PlayerHeader" Background="{DynamicResource SurfaceBrush}" Padding="16,12"
+        <Border x:Name="PlayerHeader" Background="{DynamicResource PlayerOverlayBrush}" Padding="16,12"
                 Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="{Binding Sidebar.ToggleLabel}" Command="{Binding Sidebar.ToggleCommand}"
@@ -17,6 +32,11 @@
                         Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" ToolTip="Show or hide the episode panel" />
                 <Button DockPanel.Dock="Right" Content="Open video" Command="{Binding OpenFileCommand}"
                         Style="{StaticResource SecondaryButtonStyle}" Margin="16,0,0,0" ToolTip="Open a video (Ctrl+O)" />
+                <Button DockPanel.Dock="Right" Content="Lock controls" Command="{Binding ToggleControlsLockCommand}"
+                        Visibility="{Binding CanLockControls, Converter={StaticResource BooleanToVisibility}}"
+                        Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0"
+                        ToolTip="Hide controls and ignore accidental input; unlock with L or the unlock button"
+                        AutomationProperties.Name="Lock controls" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
                             Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
                     <Button Content="&#xE892;" FontFamily="Segoe MDL2 Assets" Command="{Binding PreviousEpisodeCommand}"
@@ -32,17 +52,9 @@
                 </StackPanel>
             </DockPanel>
         </Border>
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <views:EpisodeSidebar Grid.Column="1" Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}" />
-            <Grid x:Name="VideoHost" ClipToBounds="True">
-            <StackPanel x:Name="IdleMessage" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24">
-                <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="42" HorizontalAlignment="Center"
-                           Foreground="{DynamicResource AccentBrush}" />
-                <TextBlock Text="Open a local video to begin" FontSize="20" Margin="0,20,0,8" TextAlignment="Center" />
-                <TextBlock Text="MKV, MP4, and more  ·  Ctrl+O" Foreground="{DynamicResource SecondaryTextBrush}" TextAlignment="Center" />
-            </StackPanel>
-            </Grid>
+        <Grid Grid.Row="1" Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
+            <views:EpisodeSidebar x:Name="EpisodePanel" HorizontalAlignment="Right"
+                                  Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}" />
         </Grid>
         <Border Grid.Row="2" Background="{DynamicResource AccentSurfaceBrush}" Padding="16,10"
                 Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibility}}">
@@ -64,7 +76,7 @@
                 Visibility="{Binding HasHistoryWarning, Converter={StaticResource BooleanToVisibility}}">
             <TextBlock Text="{Binding HistoryWarning}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
         </Border>
-        <Border x:Name="PlaybackControls" Grid.Row="4" Background="{DynamicResource SurfaceBrush}" Padding="16,10,16,14"
+        <Border x:Name="PlaybackControls" Grid.Row="4" Background="{DynamicResource PlayerOverlayBrush}" Padding="16,10,16,14"
                 Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <StackPanel>
                 <StackPanel Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
@@ -147,5 +159,11 @@
                 </DockPanel>
             </StackPanel>
         </Border>
+        <Button x:Name="UnlockControlsButton" Grid.RowSpan="5" Content="Unlock (L)" Command="{Binding ToggleControlsLockCommand}"
+                Visibility="{Binding AreControlsLocked, Converter={StaticResource BooleanToVisibility}}"
+                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16" Cursor="Hand"
+                Style="{StaticResource SecondaryButtonStyle}" ToolTip="Unlock playback controls (L); Escape exits fullscreen"
+                AutomationProperties.Name="Unlock controls" />
+        </Grid>
     </Grid>
 </UserControl>

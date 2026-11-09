@@ -107,6 +107,38 @@ public sealed class NativePlaybackTests : IDisposable
     }
 
     [Fact]
+    public async Task RepeatedVideoSwitchesAndEngineRestartsReleaseEveryMediaFile()
+    {
+        Directory.CreateDirectory(_directory);
+        var paths = Enumerable.Range(1, 10).Select(i => Path.Combine(_directory, $"Кино – episode {i:00}.mkv")).ToArray();
+        foreach (var path in paths) File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv"), path);
+        for (var restart = 0; restart < 3; restart++)
+        {
+            using (var playback = CreatePlayback())
+            {
+                var nativePlayer = playback.MediaPlayer;
+                long previousSession = 0;
+                foreach (var path in paths)
+                {
+                    await playback.OpenAsync(path);
+                    await WaitUntil(() => playback.Current.State == PlaybackState.Playing && HasDecodedVideo(playback),
+                        () => playback.Current.ToString());
+                    Assert.Same(nativePlayer, playback.MediaPlayer);
+                    Assert.True(playback.Current.SessionId > previousSession);
+                    previousSession = playback.Current.SessionId;
+                    Assert.Null(playback.Current.ErrorMessage);
+                }
+            }
+            // Windows refuses exclusive access while VLC still holds any of these media files.
+            foreach (var path in paths)
+            {
+                using var file = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                Assert.True(file.Length > 0);
+            }
+        }
+    }
+
+    [Fact]
     public async Task NativeTracksSwitchLanguagesSubtitlesOffAndExternalSubtitlesWithoutRestarting()
     {
         using var playback = CreatePlayback();

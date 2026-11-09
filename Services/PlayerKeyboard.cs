@@ -12,9 +12,20 @@ public static class PlayerKeyboard
     public static void Handle(KeyEventArgs e, PlayerViewModel player, bool playerVisible)
     {
         if (playerVisible) player.NotifyInteraction();
+        if (e.Handled) return;
         if (!e.Handled && e.Key == Key.Escape && player.IsFullscreen && !IsOpenComboBox(e.OriginalSource as DependencyObject))
         {
             player.ExitFullscreenCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+        if (playerVisible && player.AreControlsLocked)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) return;
+            if (e.Key == Key.L && Keyboard.Modifiers == ModifierKeys.None && !e.IsRepeat)
+                player.ToggleControlsLockCommand.Execute(null);
+            // Keep the visible unlock button operable by keyboard.
+            else if (e.Key is Key.Tab or Key.Space or Key.Return && OwnsNavigationKeys(e.OriginalSource as DependencyObject)) return;
             e.Handled = true;
             return;
         }
@@ -41,6 +52,7 @@ public static class PlayerKeyboard
             Key.N => player.NextEpisodeCommand,
             Key.P => player.PreviousEpisodeCommand,
             Key.S => player.SubtitleMenuCommand,
+            Key.L => player.ToggleControlsLockCommand,
             _ => null
         };
         if (command is not null)

@@ -25,6 +25,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     private readonly TimeProvider _timeProvider;
     private long _lastInteraction;
     private bool _controlsVisible = true;
+    private bool _controlsLocked;
 
     public PlayerViewModel(IPlaybackService playback, IFileDialogService dialogs,
         INavigationService navigation, IUiDispatcher dispatcher, WatchHistoryService? history = null,
@@ -82,6 +83,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         MuteCommand = new RelayCommand(() => playback.SetMute(!IsMuted));
         FullscreenCommand = new RelayCommand(() => IsFullscreen = !IsFullscreen);
         ExitFullscreenCommand = new RelayCommand(() => IsFullscreen = false);
+        ToggleControlsLockCommand = new RelayCommand(() => AreControlsLocked = !AreControlsLocked,
+            () => AreControlsLocked || CanLockControls);
         if (Sidebar is not null)
         {
             Sidebar.UpdatePlayback(_snapshot);
@@ -122,6 +125,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IRelayCommand MuteCommand { get; }
     public IRelayCommand FullscreenCommand { get; }
     public IRelayCommand ExitFullscreenCommand { get; }
+    public IRelayCommand ToggleControlsLockCommand { get; }
     public bool HasMedia => _snapshot.HasMedia;
     public bool IsPlaying => _snapshot.State == PlaybackState.Playing;
     public bool IsOpening => _snapshot.State == PlaybackState.Opening;
@@ -183,14 +187,28 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         private set => SetProperty(ref _controlsVisible, value);
     }
 
+    public bool CanLockControls => IsFullscreen && HasMedia && IsPlaying && !HasError;
+    public bool AreControlsLocked
+    {
+        get => _controlsLocked;
+        private set
+        {
+            if (!SetProperty(ref _controlsLocked, value)) return;
+            if (value) AreControlsVisible = false;
+            else NotifyInteraction();
+            ToggleControlsLockCommand.NotifyCanExecuteChanged();
+        }
+    }
+
     public void NotifyInteraction()
     {
         _lastInteraction = _timeProvider.GetTimestamp();
-        AreControlsVisible = true;
+        if (!AreControlsLocked) AreControlsVisible = true;
     }
 
     public void UpdateControlsVisibility(bool interactingWithControls)
     {
+        if (AreControlsLocked) return;
         if (!IsFullscreen || !IsPlaying || HasError || _isSeeking || interactingWithControls) NotifyInteraction();
         else if (_timeProvider.GetElapsedTime(_lastInteraction) >= TimeSpan.FromSeconds(3)) AreControlsVisible = false;
     }
@@ -201,8 +219,11 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         set
         {
             if (!SetProperty(ref _isFullscreen, value)) return;
+            if (!value) AreControlsLocked = false;
             NotifyInteraction();
             OnPropertyChanged(nameof(FullscreenLabel));
+            OnPropertyChanged(nameof(CanLockControls));
+            ToggleControlsLockCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -324,6 +345,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         if (_disposed || e.Snapshot.Revision <= _snapshot.Revision) return;
         if (e.Snapshot.State != _snapshot.State || e.Snapshot.ErrorMessage != _snapshot.ErrorMessage) NotifyInteraction();
         _snapshot = e.Snapshot;
+        if (!IsPlaying || HasError) AreControlsLocked = false;
+        ToggleControlsLockCommand.NotifyCanExecuteChanged();
         Sidebar?.UpdatePlayback(_snapshot);
         if (!_isSeeking)
         {

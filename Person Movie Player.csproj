@@ -26,4 +26,8 @@
     <ProjectReference Include="src\MyCinema.Infrastructure\MyCinema.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="README.md;plan.md;THIRD-PARTY-NOTICES.md;docs\RELEASE-VALIDATION.md;licenses\**" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

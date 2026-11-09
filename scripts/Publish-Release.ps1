@@ -44,7 +44,8 @@ Assert-ManagedDirectory $updateDirectory $programsDirectory 'MyCinema.update-'
 Assert-ManagedDirectory $backupDirectory $programsDirectory 'MyCinema.previous-'
 
 Write-Host 'Building and testing the official Release version...'
-& dotnet test (Join-Path $repositoryDirectory 'Person Movie Player.slnx') --configuration Release --artifacts-path $buildDirectory --verbosity minimal
+& dotnet test (Join-Path $repositoryDirectory 'Person Movie Player.slnx') --configuration Release --artifacts-path $buildDirectory --verbosity minimal `
+    --logger 'trx;LogFileName=release-tests.trx' --results-directory (Join-Path $releaseDirectory 'test-results')
 if ($LASTEXITCODE -ne 0) { throw 'Release tests failed. The installed app was not changed.' }
 
 if (Test-Path -LiteralPath $publishDirectory) {
@@ -60,6 +61,16 @@ foreach ($relativePath in @('MyCinema.App.exe', 'coreclr.dll', 'PresentationFram
         throw "The published app is incomplete: missing $relativePath. The installed app was not changed."
     }
 }
+
+foreach ($relativePath in @('README.md', 'docs\RELEASE-VALIDATION.md', 'THIRD-PARTY-NOTICES.md', 'licenses\LGPL-2.1.txt', 'licenses\Apache-2.0.txt', 'licenses\CommunityToolkit-MIT.md',
+    'libvlc\win-x64\plugins\codec\libavcodec_plugin.dll', 'libvlc\win-x64\plugins\demux\libmkv_plugin.dll',
+    'libvlc\win-x64\plugins\video_output\libdirect3d11_plugin.dll')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $publishDirectory $relativePath) -PathType Leaf)) {
+        throw "The published app is incomplete: missing $relativePath. The installed app was not changed."
+    }
+}
+& (Join-Path $PSScriptRoot 'Write-ReleaseManifest.ps1') -PublishDirectory $publishDirectory `
+    -AssetsPath (Join-Path $buildDirectory 'obj\Person Movie Player\project.assets.json')
 
 try {
     $null = New-Item -ItemType Directory -Path $programsDirectory -Force

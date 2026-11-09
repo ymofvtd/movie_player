@@ -3,6 +3,7 @@
     <SolidColorBrush x:Key="BackgroundBrush" Color="#101014" />
     <SolidColorBrush x:Key="SidebarBrush" Color="#15151B" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#1B1B22" />
+    <SolidColorBrush x:Key="PlayerOverlayBrush" Color="#E61B1B22" />
     <SolidColorBrush x:Key="ElevatedSurfaceBrush" Color="#25252E" />
     <SolidColorBrush x:Key="TextBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#B0B0BD" />

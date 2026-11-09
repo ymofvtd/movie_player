@@ -4,11 +4,11 @@ A native, offline-first Windows application for a personal movie and TV library,
 
 ## Current milestone
 
-**Phase 9 — Interface Polish is implemented and tested.** The library has loading skeletons, contextual empty states, retry guidance, Home section links, and clearer cards. Dark controls, hover/focus feedback, navigation shortcuts, bounded artwork caching, and optional page fades apply across the interface. Live desktop acceptance for Phases 5–9 remains pending.
+**Phase 10 — Testing and Release is in progress.** The self-contained Windows x64 release installs to one permanent location. Release coverage includes a 10,000-video library, native decoding across common containers, resume across database/player restarts, and repeated video switching and engine disposal. License notices, exact dependency metadata, and a SHA-256 file manifest ship with the app.
 
 Browse movies, shows, collections, and recent additions; search and filter the catalog; choose a season, episode, or movie edition; and play the selected file. Background scanning, manual organization, and the Settings hierarchy preview remain available. Settings includes a saved appearance preference; editing the remaining playback preferences is still pending.
 
-The next phase is **Phase 10 — Testing and Release**. See [plan.md](plan.md) for the complete roadmap and remaining desktop acceptance checks.
+The remaining release gates are clean-Windows playback and the complete native dependency/source review for public redistribution. See [release validation](docs/RELEASE-VALIDATION.md) for evidence and limits, and [plan.md](plan.md) for the roadmap.
 
 ## Browsing and playing your library
 
@@ -98,13 +98,15 @@ MyCinema runs one instance per Windows user/session. Opening its shortcut or exe
 
 The publish settings are in `Properties\PublishProfiles\WindowsRelease.pubxml`. The script tests and publishes before replacing the installed folder, retaining the previous installation if the replacement fails.
 
+The installed folder also contains this README, `docs\RELEASE-VALIDATION.md`, `THIRD-PARTY-NOTICES.md`, license texts, original dependency metadata, runtime notices, and `release-manifest.json`. The manifest records every packaged file's size and SHA-256 hash, plus exact package/runtime versions. Publishing rejects missing key VLC codec/demux/output plugins, missing notice files, or a dependency with an unreviewed license declaration. The full test report is saved to `.artifacts\official-release\test-results\release-tests.trx`.
+
 Alternatively, open `Person Movie Player.slnx` in Visual Studio, select the root WPF project as the startup project, and press F5. Both AnyCPU and x64 solution configurations compile the projects for x64, as configured in `Directory.Build.props`.
 
 ## Watching a local video
 
 Choose **Open video** from Home or the Player page, or press **Ctrl+O**. Select a local file in the Windows file picker. The player accepts MKV, MP4, AVI, MOV, WMV, WebM, M4V, MPG, MPEG, TS, and M2TS; decoding depends on the VLC runtime and the file's codecs.
 
-Drag the seek bar to jump to a time. **Stop** resets playback to the beginning; **Play** starts it again. Fullscreen fills the current monitor and restores the previous window bounds and state when exited. Windowed controls stay visible below the video. In fullscreen, the header and controls hide after three seconds of inactivity; moving the pointer, clicking the picture, or pressing a key reveals them. Pause, seeking, errors, open menus, and pointer/keyboard interaction with controls keep them visible. The video host and native player are retained throughout these changes.
+Drag the seek bar to jump to a time. **Stop** resets playback to the beginning; **Play** starts it again. Fullscreen fills the current monitor and restores the previous window bounds and state when exited. Controls appear over the video without changing its size or aspect ratio, and stay visible in windowed mode. In fullscreen, the header, episode panel, and controls hide after three seconds of inactivity; moving the pointer, clicking the picture, or pressing a key reveals them. Pause, seeking, errors, open menus, and pointer/keyboard interaction with controls keep them visible. **Lock controls** (or **L**) keeps the controls hidden and ignores accidental playback keys and double-clicks. Use **Unlock (L)** or press **L** to unlock; **Escape** exits fullscreen. Pausing, ending playback, or an error also releases the lock. The video host and native player are retained throughout these changes.
 
 Expand **Audio, subtitles & picture** below the video to access the playback options. It starts collapsed to leave room for the picture and episode list at small window sizes. Use **Audio language** to choose any available language or dub. Track names and language tags come from the file; choosing English requires an English track to be included. Tracks with missing language tags retain VLC's track descriptions. Selections become available once playback is ready and can be changed while playing or paused.
 
@@ -128,7 +130,7 @@ Playing a scanned episode opens its show's panel on the right, including when th
 
 The previous/next buttons in the player header, or **P** / **N**, navigate through available episodes across seasons and skip missing files and empty seasons. Navigation is disabled at the first/last available episode. Natural end marks the current episode watched; automatic next-episode playback remains planned. Browsing another season leaves playback running until an episode is clicked.
 
-Episode switches use the existing Resume / Start Over / Cancel behavior and save the previous episode's position first. Cancel retains the current episode, paused. Alternate files prefer the current edition or the most recently played available edition. **Hide episodes** / **Show episodes** works in windowed and fullscreen playback. Its state is saved separately in `UserSettings` and restored on startup when the stored `RememberSidebarState` preference is enabled. Playback controls remain below the video and span the full player width.
+Episode switches use the existing Resume / Start Over / Cancel behavior and save the previous episode's position first. Cancel retains the current episode, paused. Alternate files prefer the current edition or the most recently played available edition. **Hide episodes** / **Show episodes** works in windowed and fullscreen playback. Its state is saved separately in `UserSettings` and restored on startup when the stored `RememberSidebarState` preference is enabled. Playback controls overlay the bottom of the video and span the full player width; the episode panel overlays the right side without shrinking the picture.
 
 | Shortcut | Action |
 |---|---|
@@ -141,6 +143,7 @@ Episode switches use the existing Resume / Start Over / Cancel behavior and save
 | S | Reveal playback options and open the subtitle selector |
 | Tab from the video | Reveal and focus playback controls |
 | F | Toggle fullscreen |
+| L | Lock / unlock controls during fullscreen playback |
 | Escape | Exit fullscreen |
 | Double-click video | Toggle fullscreen |
 
@@ -169,7 +172,7 @@ The original app project remains at the repository root to preserve the existing
 
 One shared playback service serializes open, play, and stop operations off the UI thread. Native callbacks publish immutable state, and the player ViewModel dispatches updates onto WPF's UI thread. The application waits for playback operations to finish and stops VLC before disposing the window and service container.
 
-The video host stays alive during page navigation and fullscreen transitions. Mouse input uses the supported `VideoView` content overlay, while playback controls sit outside the native video region, following [LibVLCSharp's WPF guidance](https://github.com/videolan/libvlcsharp/blob/3.x/docs/getting_started.md#wpf).
+The video host stays alive during page navigation and fullscreen transitions. Mouse input, playback controls, and the episode panel use the supported `VideoView` content overlay, following [LibVLCSharp's WPF guidance](https://github.com/videolan/libvlcsharp/blob/3.x/src/LibVLCSharp.WPF/README.md). The native viewport has its own fixed layout, so showing, hiding, locking, or expanding the overlay never changes the video dimensions.
 
 ## Local data
 
@@ -208,7 +211,7 @@ Verified on Windows on 2026-11-09 (earlier milestone checks were on 2026-11-08):
 - Phase 8: Debug and isolated Release builds succeed with zero warnings/errors. All 144 tests pass in Release. Nineteen new organization cases cover metadata/artwork persistence, all six Movie/Show/Franchise conversions, stable per-file progress, repeated rescans, newly added children, naming changes without duplicate seasons/items, franchise ordering/reassignment/removal, duplicate merging, file separation, episode reparenting/ranges, invalid-write rollback, cancellation, editor validation, and v2 migration. Six additional folder-artwork cases cover movie/show/franchise roots, restart persistence, episode inheritance, PNG/JPG/JPEG precedence, addition/replacement/removal through rescans, metadata/progress preservation, explicit poster/removal priority, returning to folder artwork, converted playable children, and v3 migration preserving existing manual artwork.
 - WPF checks use the actual poster picker command with an injected file choice, import an image into the cache, delete its source, reopen the database, and verify image bindings on movie/show/franchise cards and details. They render expanded editors at 604 and 956 pixels wide, check poster removal, corrupt/missing/remote-image fallback, and retaining the original target if navigation changes during import. Images are written under the test output's `Artifacts` directory. The running application was left uninterrupted; live file-picker and organization acceptance remain pending.
 - Phase 7: Release builds with zero warnings/errors; all 119 tests pass. New cases exercise all seven speed values and all four picture ratios against native VLC, invalid option rejection, reset to Original, pause/seek continuity, Stop/replay, file switching on the same player, and recoverable error details/dismissal. Five generated MKV, MP4, MOV, AVI, and WMV fixtures must decode video frames, seek, pause/resume, and accept speed changes. These cover H.264/AAC, MPEG-4 Visual/MP3, and WMV2/WMA2; they do not establish support for every codec combination.
-- Fullscreen inactivity tests use a controlled clock to verify hiding, input wake-up, pause, seeking, menus/focus, errors, and windowed visibility. Actual WPF bindings verify that hidden controls release the full video area and reappear on interaction. Templates render at small and larger sizes, with a minimum episode-list height and all selectors checked. The running desktop renders local media with the compact options panel. Live user input was detected during the desktop check, so automated desktop input was stopped; fullscreen keyboard/menu/cursor behavior and the earlier resume/sidebar desktop acceptance checks remain pending.
+- Fullscreen inactivity tests use a controlled clock to verify hiding, input wake-up, pause, seeking, menus/focus, errors, windowed visibility, and locking. Actual WPF bindings verify that the full video area stays fixed as controls hide, reappear, lock, and expand. A native WPF/VLC check exercises the detached overlay, keyboard unlock, unchanged viewport/handle/aspect ratio, and clean unload/reload. Templates render at small and larger sizes, with a minimum episode-list height and all selectors checked. Interactive desktop acceptance remains separate from these automated checks.
 - Phase 6: Release builds without warnings/errors and all 110 tests pass. Eleven sidebar cases cover numeric seasons/episode ranges, watched/live progress, independent per-episode resume, Cancel/Start Over, missing-file skipping, season transitions, concurrent-open prevention, refreshed availability, manual resets, direct file opening with canonical paths, movie/unscanned context clearing, and saved collapse state after reopening SQLite. An additional native VLC case switches between two seasons and returns to the previous episode at its saved eight-second position using the same native player.
 - The WPF player and sidebar render at 604×400, 956×540, and 1180×540; the active row, season selector, navigation states, and full-width playback controls are checked. Images are written under the test output's `Artifacts` directory. Computer Use again rejected the live application launch with “Computer Use was not approved to use app,” so interactive sidebar, keyboard, auto-scroll, and fullscreen acceptance remain pending.
 - Phase 5 plus audio/subtitle selection: Release builds without warnings/errors and all 98 tests pass. Added cases cover periodic saves, pause/Stop positions, file switching, stale callbacks, completion/reset behavior, resume choices/preferences/thresholds, Continue Watching episodes and edition selection, and persistence after reopening SQLite. A native integration case opens a scanned fixture, pauses/seeks, saves and disposes the player/container, reopens the same database with a new player, resumes at the saved timestamp, and verifies Stop/replay starts at zero.
@@ -226,6 +229,4 @@ Verified on Windows on 2026-11-09 (earlier milestone checks were on 2026-11-08):
 - Phase 1 verification confirmed closing the window during active playback succeeds with exit code 0.
 - Startup diagnostics confirm the running application is 64-bit.
 
-The native integration tests exercise the engine without measuring audible output or GPU rendering. Desktop smoke checks cover the rendered picture and controls on this machine. Broader codec coverage, audio-device testing, display scaling, clean-machine deployment, and release packaging remain later acceptance checks in the project plan.
-#   m o v i e _ p l a y e r  
- 
+The native integration tests exercise the engine without measuring audible output or GPU rendering. Desktop smoke checks cover the rendered picture and controls on this machine. Broader codec coverage, audio-device testing, physical display scaling, and clean-machine deployment remain acceptance checks. See docs/RELEASE-VALIDATION.md for the packaged release evidence and remaining gates.

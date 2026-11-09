@@ -83,6 +83,7 @@ public sealed partial class LibraryTemplateTests
                 VerifyOrganizationPosterLayout(artifacts);
                 VerifyPosterCache();
                 VerifyPolishedLayouts(artifacts);
+                VerifyNativeVideoOverlay();
                 completion.SetResult();
             }
             catch (Exception error) { completion.SetException(error); }
@@ -113,6 +114,31 @@ public sealed partial class LibraryTemplateTests
         player.NotifyInteraction();
         view.UpdateLayout();
         Assert.Equal(Visibility.Visible, controls.Visibility);
+        var videoHost = Assert.IsType<Grid>(view.FindName("VideoHost"));
+        Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
+        Assert.IsType<Expander>(view.FindName("PlaybackOptionsPanel")).IsExpanded = true;
+        view.UpdateLayout();
+        Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
+        player.ToggleControlsLockCommand.Execute(null);
+        view.UpdateLayout();
+        Assert.Equal(Visibility.Collapsed, controls.Visibility);
+        var unlock = Assert.IsType<Button>(view.FindName("UnlockControlsButton"));
+        Assert.Equal(Visibility.Visible, unlock.Visibility);
+        Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
+        var source = new TestPresentationSource();
+        var skip = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, source, 0, System.Windows.Input.Key.Right)
+            { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent, Source = new Grid() };
+        PlayerKeyboard.Handle(skip, player, true);
+        Assert.True(skip.Handled);
+        Assert.True(player.AreControlsLocked);
+        var unlockKey = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, source, 0, System.Windows.Input.Key.L)
+            { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent, Source = new Grid() };
+        PlayerKeyboard.Handle(unlockKey, player, true);
+        Assert.True(unlockKey.Handled);
+        Assert.False(player.AreControlsLocked);
+        Assert.Equal(Visibility.Collapsed, unlock.Visibility);
+        Assert.Equal(Visibility.Visible, controls.Visibility);
+        Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
         player.IsFullscreen = false;
         clock.Advance();
         player.UpdateControlsVisibility(false);

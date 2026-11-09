@@ -1789,26 +1789,28 @@ The application is comfortable to navigate with mouse and keyboard and looks con
 
 Tasks:
 
-- [ ] Test scanning accuracy.
-- [ ] Test corrupted video handling.
-- [ ] Test missing file handling.
-- [ ] Test disconnected library drive.
-- [ ] Test database persistence.
-- [ ] Test resume accuracy.
-- [ ] Test episode switching.
-- [ ] Test repeated full-screen toggling.
-- [ ] Test VLC resource disposal.
-- [ ] Test repeated application restarts.
-- [ ] Test large libraries.
+- [x] Test scanning accuracy.
+- [x] Test corrupted video handling.
+- [x] Test missing file handling.
+- [x] Test disconnected library drive (unavailable root/unreadable subtree simulation).
+- [x] Test database persistence.
+- [x] Test resume accuracy.
+- [x] Test episode switching.
+- [x] Test repeated full-screen toggling.
+- [x] Test VLC resource disposal (player reuse and file-handle release).
+- [x] Test repeated application restarts.
+- [x] Test large libraries.
 - [ ] Verify playback on a clean Windows machine.
-- [ ] Package VLC native dependencies.
-- [ ] Verify third-party licenses.
-- [ ] Create release build.
-- [ ] Create README and installation instructions.
+- [x] Package VLC native dependencies.
+- [ ] Verify third-party licenses for public redistribution; native plugin/dependency source review remains pending.
+- [x] Create release build.
+- [x] Create README and installation instructions.
 
 **Completion Criteria:**
 
 A clean Windows installation can launch MyCinema and play local media without requiring Visual Studio.
+
+**Release validation 2026-11-09:** Phase 10 is in progress. A new integration test scans 10,000 fixture videos (1,000 movies and 9,000 episodes across 100 shows), browses/searches/pages the catalog, and reopens/rescans SQLite while preserving all file/item IDs and independent history. A native stress test decodes 30 video opens across three VLC lifetimes, retains one native player per lifetime, and verifies exclusive access to all files after disposal. Both targeted tests pass. Existing native tests cover corrupt/missing media, container decoding, resume after database/player recreation, and cross-season navigation. Desktop checks on the installed app render a local 4K H.265 MKV and verify two fullscreen/Escape cycles, continuous playback, restored window bounds, and control auto-hide. The release now carries license texts, original package metadata, runtime notices, and a SHA-256 file/dependency manifest; publishing checks key codec/demux/output plugins and refuses unknown license declarations. Full evidence and remaining clean-machine, extended desktop, and public-redistribution source/notice gates are in `docs/RELEASE-VALIDATION.md`. These gates are not marked complete based on development-machine testing.
 
 ---
 
@@ -2126,4 +2128,4 @@ After that milestone is verified, continue with library scanning and organizatio
 **Project:** MyCinema  
 **Document:** PROJECT_PLAN.md  
 **Version:** 1.0  
-**Status:** Phase 9 implemented and tested; live desktop acceptance for Phases 5–9 pending / Next: Phase 10 — Testing and Release.
+**Status:** Phase 10 — Testing and Release in progress; large-library/native stress tests added. Clean-Windows acceptance, extended desktop checks, and public redistribution source/notice review remain pending.

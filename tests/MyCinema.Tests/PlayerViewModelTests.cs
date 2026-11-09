@@ -184,6 +184,48 @@ public sealed class PlayerViewModelTests
         Assert.True(player.AreControlsVisible);
     }
 
+    [Fact]
+    public void ControlLockIgnoresActivityAndUnlocksForPauseErrorsOrLeavingFullscreen()
+    {
+        var clock = new ManualClock();
+        var playback = new FakePlayback();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), timeProvider: clock);
+        Assert.False(player.ToggleControlsLockCommand.CanExecute(null));
+        playback.Emit(new(PlaybackState.Playing, "film.mkv", 1000, 20000, true, Revision: 1));
+        Assert.False(player.CanLockControls);
+        player.IsFullscreen = true;
+        Assert.True(player.ToggleControlsLockCommand.CanExecute(null));
+        player.ToggleControlsLockCommand.Execute(null);
+        Assert.True(player.AreControlsLocked);
+        Assert.False(player.AreControlsVisible);
+        player.NotifyInteraction();
+        clock.Advance(4);
+        player.UpdateControlsVisibility(true);
+        playback.Emit(playback.Current with { PositionMs = 1500, Revision = 2 });
+        Assert.False(player.AreControlsVisible);
+        Assert.True(player.AreControlsLocked);
+        player.ToggleControlsLockCommand.Execute(null);
+        Assert.False(player.AreControlsLocked);
+        Assert.True(player.AreControlsVisible);
+        player.ToggleControlsLockCommand.Execute(null);
+        playback.Emit(playback.Current with { State = PlaybackState.Paused, Revision = 3 });
+        Assert.False(player.AreControlsLocked);
+        Assert.True(player.AreControlsVisible);
+        playback.Emit(playback.Current with { State = PlaybackState.Playing, Revision = 4 });
+        player.ToggleControlsLockCommand.Execute(null);
+        playback.Emit(playback.Current with { ErrorMessage = "Track unavailable", Revision = 5 });
+        Assert.False(player.AreControlsLocked);
+        Assert.True(player.AreControlsVisible);
+        Assert.False(player.CanLockControls);
+        playback.Emit(playback.Current with { ErrorMessage = null, Revision = 6 });
+        player.ToggleControlsLockCommand.Execute(null);
+        player.ExitFullscreenCommand.Execute(null);
+        Assert.False(player.AreControlsLocked);
+        Assert.True(player.AreControlsVisible);
+        Assert.False(player.ToggleControlsLockCommand.CanExecute(null));
+    }
+
     private sealed class ManualClock : TimeProvider
     {
         private long _timestamp;
