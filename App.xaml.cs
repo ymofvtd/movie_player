@@ -12,6 +12,8 @@ public partial class App : Application
 {
     private ServiceProvider? _services;
     private ILogger<App>? _logger;
+    private SingleInstanceApplication? _singleInstance;
+    private bool _activationRequested;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -21,6 +23,16 @@ public partial class App : Application
 
         try
         {
+            _singleInstance = new SingleInstanceApplication();
+            if (!_singleInstance.IsPrimaryInstance)
+            {
+                if (!await _singleInstance.ActivatePrimaryAsync())
+                    MessageBox.Show("MyCinema is already running. Open its existing window from the taskbar.", "MyCinema",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
+            _singleInstance.ListenForActivation(() => Dispatcher.BeginInvoke(ActivateMainWindow));
             _services = new ServiceCollection().AddMyCinema().BuildServiceProvider(
                 new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
             _logger = _services.GetRequiredService<ILogger<App>>();
@@ -33,6 +45,7 @@ public partial class App : Application
             await _services.GetRequiredService<EpisodeSidebarViewModel>().InitializeAsync();
             MainWindow = _services.GetRequiredService<MainWindow>();
             MainWindow.Show();
+            if (_activationRequested) ActivateMainWindow();
         }
         catch (Exception error)
         {
@@ -48,8 +61,20 @@ public partial class App : Application
         DispatcherUnhandledException -= OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
         _logger?.LogInformation("MyCinema shutting down. Exit code: {ExitCode}", e.ApplicationExitCode);
-        _services?.Dispose();
+        try { _services?.Dispose(); }
+        finally { _singleInstance?.Dispose(); }
         base.OnExit(e);
+    }
+
+    private void ActivateMainWindow()
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        _activationRequested = true;
+        if (MainWindow is not { } window) return;
+        _activationRequested = false;
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        if (!window.IsVisible) window.Show();
+        window.Activate();
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

@@ -82,22 +82,21 @@ dotnet test "Person Movie Player.slnx" --no-build
 dotnet run --project "Person Movie Player.csproj"
 ```
 
-To run the latest verified Release build:
+## Install or update the everyday app
+
+Use this command from the repository to build, test, and install the latest Release version:
 
 ```powershell
-dotnet run --project "Person Movie Player.csproj" --configuration Release
+powershell -ExecutionPolicy Bypass -File .\scripts\Publish-Release.ps1
 ```
 
-Close an application instance before rebuilding its configuration so Windows can replace the executable and assemblies.
+The permanent executable is **`%LOCALAPPDATA%\Programs\MyCinema\MyCinema.App.exe`**, which on this computer is `C:\Users\myasg\AppData\Local\Programs\MyCinema\MyCinema.App.exe`. Use the **MyCinema** Desktop or Start menu shortcut for everyday use. Every release updates that same location; development outputs under `bin` and `.artifacts` are not the installed app.
 
-Phase 9 was built separately while the existing Release app stayed open:
+The installed app includes the .NET desktop runtime, SQLite, and VLC. It runs without Visual Studio or a separate .NET installation. Keep the executable with the other files in its installation folder. Your library, settings, artwork, and history remain under `%LOCALAPPDATA%\MyCinema`, separately from the executable. Close the installed app before running the update script; it refuses to replace a running installation.
 
-```powershell
-dotnet build "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase9-final
-dotnet test "Person Movie Player.slnx" --configuration Release --artifacts-path .artifacts/phase9-final --no-build --no-restore
-# Close the old application before opening the updated build.
-& ".\.artifacts\phase9-final\bin\Person Movie Player\release\MyCinema.App.exe"
-```
+MyCinema runs one instance per Windows user/session. Opening its shortcut or executable again restores the existing window, including when minimized, instead of opening another player or touching playback. Launches received during startup are applied when the window is ready.
+
+The publish settings are in `Properties\PublishProfiles\WindowsRelease.pubxml`. The script tests and publishes before replacing the installed folder, retaining the previous installation if the replacement fails.
 
 Alternatively, open `Person Movie Player.slnx` in Visual Studio, select the root WPF project as the startup project, and press F5. Both AnyCPU and x64 solution configurations compile the projects for x64, as configured in `Directory.Build.props`.
 
