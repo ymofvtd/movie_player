@@ -46,12 +46,14 @@ public sealed class LibraryScannerService(ILibraryRepository library, IScanRepos
                 var scan = await Task.Run(() => new FolderScanner().Read(root.Path, progress, cancellationToken), cancellationToken)
                     .ConfigureAwait(false);
                 warnings.AddRange(scan.Warnings);
+                // Reconcile every finished scan, including roots that could not be read.
+                // Files absent from this scan must disappear from library browsing.
+                await scans.CommitAsync(root.Id, scan, cancellationToken).ConfigureAwait(false);
                 if (scan.UnreadablePaths.Any(p => Sql.PathKey(p) == Sql.PathKey(root.Path)))
                 {
-                    logger.LogWarning("Library root unavailable; retained its saved records: {Path}", root.Path);
+                    logger.LogWarning("Could not read library root; removed its content from browsing: {Path}", root.Path);
                     continue;
                 }
-                await scans.CommitAsync(root.Id, scan, cancellationToken).ConfigureAwait(false);
                 covered.Add(canonical);
                 completed++;
                 files += scan.Files.Count;

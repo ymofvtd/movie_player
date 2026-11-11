@@ -98,8 +98,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         {
             var result = await _scanner.ScanAsync(progress, cancellationToken);
             ScanWarnings = result.Warnings.Select(w => $"{w.Path}: {w.Message}").ToArray();
-            ScanStatus = result.CompletedRoots == 0
-                ? "No folders scanned. Check that your library drive is connected and the folders are enabled."
+            ScanStatus = result.CompletedRoots == 0 && result.Warnings.Count == 0
+                ? "No enabled library folders to scan."
                 : $"Scan complete · {result.Files} videos · {result.Warnings.Count} warnings";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -147,7 +147,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         int Count(LibraryItemType type) => active.Count(i => i.ItemType == type);
         LibrarySummary = $"{files.Count(f => f.IsAvailable)} videos · {Count(LibraryItemType.Movie)} movies · " +
             $"{Count(LibraryItemType.Show)} shows · {Count(LibraryItemType.Franchise)} franchise candidates · " +
-            $"{Count(LibraryItemType.Uncategorized)} uncategorized · {files.Count(f => !f.IsAvailable)} unavailable";
+            $"{Count(LibraryItemType.Uncategorized)} uncategorized";
         var children = active.ToLookup(i => i.ParentId ?? 0);
         ScanPreviewItem Build(LibraryItem item) => new(
             $"{item.Title}{(item.ReleaseYear.HasValue ? $" ({item.ReleaseYear})" : "")} · " +

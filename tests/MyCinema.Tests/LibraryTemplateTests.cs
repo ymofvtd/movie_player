@@ -55,7 +55,6 @@ public sealed partial class LibraryTemplateTests
                 using var player = new PlayerViewModel(new PreviewPlayback(), new PreviewDialogs(),
                     new NavigationService(NullLogger<NavigationService>.Instance), new PreviewDispatcher());
                 var view = new PlayerView { DataContext = player };
-                Assert.IsType<Expander>(view.FindName("PlaybackOptionsPanel")).IsExpanded = true;
                 // Exercise the real template at the minimum window width minus its navigation sidebar.
                 view.Measure(new Size(676, 540));
                 view.Arrange(new Rect(0, 0, 676, 540));
@@ -66,11 +65,20 @@ public sealed partial class LibraryTemplateTests
                 Assert.Equal("Audio language", AutomationProperties.GetName(combos[0]));
                 Assert.Equal("English · Original", Assert.IsType<PlaybackTrack>(combos[0].SelectedItem).Label);
                 Assert.Equal("Off", Assert.IsType<PlaybackTrack>(combos[1].SelectedItem).Label);
-                Assert.All(combos, combo => Assert.InRange(combo.ActualWidth, 120, 300));
-                var speed = Assert.Single(Descendants(view).OfType<ComboBox>(), c => AutomationProperties.GetName(c) == "Playback speed");
-                Assert.Equal(1d, speed.SelectedItem);
+                Assert.All(combos, combo => Assert.InRange(combo.ActualWidth, 70, 110));
+                Assert.DoesNotContain(Descendants(view).OfType<Button>(), b => b.Command == player.RewindCommand || b.Command == player.ForwardCommand);
+                Assert.InRange(Assert.IsType<Border>(view.FindName("PlaybackControls")).ActualHeight, 60, 80);
+                Assert.DoesNotContain(Descendants(view).OfType<ComboBox>(), c => AutomationProperties.GetName(c) == "Playback speed");
                 var ratio = Assert.Single(Descendants(view).OfType<ComboBox>(), c => AutomationProperties.GetName(c) == "Video aspect ratio");
                 Assert.Equal("Original", Assert.IsType<AspectRatioChoice>(ratio.SelectedItem).Label);
+                var seekBar = Assert.IsType<Grid>(view.FindName("SeekBar"));
+                Assert.All(combos.Append(ratio), combo =>
+                {
+                    Assert.Equal(Visibility.Visible, combo.Visibility);
+                    Assert.True(combo.ActualHeight > 0);
+                    Assert.True(combo.TranslatePoint(new Point(), view).Y >=
+                        seekBar.TranslatePoint(new Point(0, seekBar.ActualHeight), view).Y);
+                });
                 var bitmap = new RenderTargetBitmap(676, 540, 96, 96, PixelFormats.Pbgra32);
                 bitmap.Render(view);
                 var encoder = new PngBitmapEncoder();
@@ -78,6 +86,7 @@ public sealed partial class LibraryTemplateTests
                 var artifacts = Path.Combine(AppContext.BaseDirectory, "Artifacts");
                 Directory.CreateDirectory(artifacts);
                 using (var output = File.Create(Path.Combine(artifacts, "PlayerControls.png"))) encoder.Save(output);
+                VerifySliderInputGeometry(view);
                 VerifyFullscreenLayout();
                 VerifySidebarLayout(artifacts);
                 VerifyOrganizationPosterLayout(artifacts);
@@ -114,9 +123,13 @@ public sealed partial class LibraryTemplateTests
         player.NotifyInteraction();
         view.UpdateLayout();
         Assert.Equal(Visibility.Visible, controls.Visibility);
+        Assert.Equal(Colors.Transparent, Assert.IsType<SolidColorBrush>(controls.Background).Color);
+        Assert.Equal(Colors.Transparent, Assert.IsType<SolidColorBrush>(Assert.IsType<Border>(view.FindName("PlayerHeader")).Background).Color);
+        Assert.All(Descendants(controls).OfType<Button>(), button =>
+            Assert.Equal(Colors.Transparent, Assert.IsType<SolidColorBrush>(button.Background).Color));
         var videoHost = Assert.IsType<Grid>(view.FindName("VideoHost"));
         Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
-        Assert.IsType<Expander>(view.FindName("PlaybackOptionsPanel")).IsExpanded = true;
+        Assert.IsType<StackPanel>(view.FindName("PlaybackOptionsPanel"));
         view.UpdateLayout();
         Assert.Equal(new Size(1280, 720), videoHost.RenderSize);
         player.ToggleControlsLockCommand.Execute(null);
@@ -142,7 +155,10 @@ public sealed partial class LibraryTemplateTests
         player.IsFullscreen = false;
         clock.Advance();
         player.UpdateControlsVisibility(false);
-        Assert.True(player.AreControlsVisible);
+        Assert.False(player.AreControlsVisible);
+        player.NotifyInteraction();
+        view.UpdateLayout();
+        Assert.NotEqual(Colors.Transparent, Assert.IsType<SolidColorBrush>(controls.Background).Color);
     }
 
     private sealed class LayoutClock : TimeProvider

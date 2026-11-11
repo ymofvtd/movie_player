@@ -190,16 +190,16 @@ public sealed class ScanRepository(SqliteDatabase database) : IScanRepository
                 items[id] = items[id] with { PosterPath = poster, UpdatedUtc = now };
             }
 
-            // Only mark a file missing after an authoritative enumeration of its part of this root.
+            // A finished scan defines the visible library, even for unreadable paths.
+            // Retain identities and history privately so returning files can resume.
             var unavailable = new List<long>();
-            var unreadable = scan.UnreadablePaths.Select(Sql.PathKey).ToArray();
             using (var command = Sql.Command(connection, transaction,
                 "SELECT Id, CanonicalPath FROM MediaFiles WHERE LibraryRootId = $root AND IsAvailable = 1;", ("$root", rootId)))
             using (var reader = command.ExecuteReader())
                 while (reader.Read())
                 {
                     var path = reader.GetString(1);
-                    if (!seen.Contains(path) && !unreadable.Any(blocked => IsWithin(path, blocked)))
+                    if (!seen.Contains(path))
                         unavailable.Add(reader.GetInt64(0));
                 }
             foreach (var id in unavailable)
@@ -209,7 +209,7 @@ public sealed class ScanRepository(SqliteDatabase database) : IScanRepository
                     "UPDATE MediaFiles SET IsAvailable = 0 WHERE Id = $id;", ("$id", id));
                 command.ExecuteNonQuery();
             }
-            if (unreadable.Length == 0)
+            if (scan.UnreadablePaths.Count == 0)
             {
                 using var command = Sql.Command(connection, transaction,
                     "UPDATE LibraryRoots SET LastScanUtc = $utc WHERE Id = $id;", ("$utc", now), ("$id", rootId));
@@ -217,10 +217,6 @@ public sealed class ScanRepository(SqliteDatabase database) : IScanRepository
             }
             return 0;
         }, cancellationToken);
-
-    private static bool IsWithin(string path, string directory) => path == directory ||
-        path.StartsWith(Path.EndsInDirectorySeparator(directory) ? directory : directory + Path.DirectorySeparatorChar,
-            StringComparison.Ordinal);
 
     private static long PlayableChild(SqliteConnection connection, SqliteTransaction transaction,
         Dictionary<long, LibraryItem> items, long containerId, string path)

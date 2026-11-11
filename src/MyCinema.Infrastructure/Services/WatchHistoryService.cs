@@ -17,6 +17,7 @@ public sealed class WatchHistoryService : IDisposable
     private readonly object _gate = new();
     private Task _pending = Task.CompletedTask;
     private PlaybackSnapshot? _latest;
+    private PlaybackSnapshot? _advancingFrom;
     private long _revision = -1;
     private long? _suppressedSession;
     private DateTimeOffset _lastSave;
@@ -65,8 +66,17 @@ public sealed class WatchHistoryService : IDisposable
             if (previous?.SessionId != snapshot.SessionId)
             {
                 if (previous is not null) EnqueueSave(previous);
+                _advancingFrom = previous;
                 _lastSave = _clock.GetUtcNow();
             }
+            // Wait for the replacement episode to actually start; cancelled or failed opens don't complete anything.
+            if (snapshot.State == PlaybackState.Playing && _advancingFrom is { } outgoing)
+            {
+                EnqueueSave(outgoing, snapshot.FilePath);
+                _advancingFrom = null;
+            }
+            else if (snapshot.State is PlaybackState.Stopped or PlaybackState.Error or PlaybackState.Empty)
+                _advancingFrom = null;
             // Stop resets VLC's clock. Persist the last position before that reset.
             if (snapshot.State == PlaybackState.Stopped && previous?.SessionId == snapshot.SessionId)
                 snapshot = snapshot with { PositionMs = previous.PositionMs };
@@ -81,7 +91,7 @@ public sealed class WatchHistoryService : IDisposable
         }
     }
 
-    private void EnqueueSave(PlaybackSnapshot snapshot)
+    private void EnqueueSave(PlaybackSnapshot snapshot, string? nextPath = null)
     {
         if (snapshot.FilePath is null || snapshot.DurationMs <= 0 || snapshot.State == PlaybackState.Opening) return;
         _lastSave = _clock.GetUtcNow();
@@ -91,16 +101,45 @@ public sealed class WatchHistoryService : IDisposable
             var file = await _library.FindFileAsync(snapshot.FilePath).ConfigureAwait(false);
             if (file is null) return;
             var existing = await _progress.GetAsync(file.Id).ConfigureAwait(false);
+            var completedByAdvancing = snapshot.PositionMs >= snapshot.DurationMs * 0.9 && nextPath is not null &&
+                await IsLaterSeriesItemAsync(file, nextPath).ConfigureAwait(false);
             var now = _clock.GetUtcNow();
             await _progress.SaveAsync(new PlaybackProgress
             {
                 MediaFileId = file.Id, PositionMs = PlaybackMath.ClampPosition(snapshot.PositionMs, snapshot.DurationMs),
-                DurationMs = snapshot.DurationMs, IsCompleted = snapshot.State == PlaybackState.Ended || existing?.IsCompleted == true,
+                DurationMs = snapshot.DurationMs, IsCompleted = snapshot.State == PlaybackState.Ended ||
+                    existing?.IsCompleted == true || completedByAdvancing,
                 LastPlayedUtc = now, UpdatedUtc = now
             }).ConfigureAwait(false);
             Warning = null;
             Saved?.Invoke(this, EventArgs.Empty);
         });
+    }
+
+    private async Task<bool> IsLaterSeriesItemAsync(MediaFile previousFile, string nextPath)
+    {
+        var nextFile = await _library.FindFileAsync(nextPath).ConfigureAwait(false);
+        if (nextFile is null || nextFile.LibraryItemId == previousFile.LibraryItemId) return false;
+        var previous = await _library.GetItemAsync(previousFile.LibraryItemId).ConfigureAwait(false);
+        var next = await _library.GetItemAsync(nextFile.LibraryItemId).ConfigureAwait(false);
+        if (previous is { ItemType: LibraryItemType.Movie, ParentId: { } franchiseId } &&
+            next is { ItemType: LibraryItemType.Movie } && next.ParentId == franchiseId)
+        {
+            var franchise = await _library.GetItemAsync(franchiseId).ConfigureAwait(false);
+            return franchise?.ItemType == LibraryItemType.Franchise &&
+                StringComparer.OrdinalIgnoreCase.Compare(next.SortTitle, previous.SortTitle) > 0;
+        }
+        if (previous is not { ItemType: LibraryItemType.Episode, ParentId: { } previousSeasonId } ||
+            next is not { ItemType: LibraryItemType.Episode, ParentId: { } nextSeasonId }) return false;
+        var previousSeason = await _library.GetItemAsync(previousSeasonId).ConfigureAwait(false);
+        var nextSeason = await _library.GetItemAsync(nextSeasonId).ConfigureAwait(false);
+        if (previousSeason is not { ItemType: LibraryItemType.Season, ParentId: { } showId } ||
+            nextSeason is not { ItemType: LibraryItemType.Season } || nextSeason.ParentId != showId) return false;
+        var previousNumber = previousSeason.SeasonNumber ?? previous.SeasonNumber;
+        var nextNumber = nextSeason.SeasonNumber ?? next.SeasonNumber;
+        return previousNumber is not null && nextNumber is not null &&
+            (nextNumber > previousNumber || nextNumber == previousNumber &&
+                previous.EpisodeNumber is not null && next.EpisodeNumber > previous.EpisodeNumber);
     }
 
     // Caller holds _gate. Continuations always run on workers, never in a VLC callback.

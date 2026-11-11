@@ -141,14 +141,16 @@ public sealed class PlayerViewModelTests
         Assert.False(player.SelectAspectRatioCommand.CanExecute(choice));
     }
 
-    [Fact]
-    public void FullscreenControlsHideAfterIdleAndReappearForInputPauseSeekAndErrors()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ControlsHideAfterIdleAndReappearForInputPauseSeekAndErrors(bool fullscreen)
     {
         var clock = new ManualClock();
         var playback = new FakePlayback();
         using var player = new PlayerViewModel(playback, new FakeDialogs(null),
             new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), timeProvider: clock);
-        player.IsFullscreen = true;
+        player.IsFullscreen = fullscreen;
         clock.Advance(10);
         player.UpdateControlsVisibility(false);
         Assert.True(player.AreControlsVisible); // Empty player always remains usable.
@@ -164,7 +166,7 @@ public sealed class PlayerViewModelTests
         player.NotifyInteraction();
         Assert.True(player.AreControlsVisible);
         clock.Advance(4);
-        player.UpdateControlsVisibility(true); // Pointer, keyboard focus, or a dropdown holds controls open.
+        player.UpdateControlsVisibility(true); // An open dropdown or active drag holds controls open.
         Assert.True(player.AreControlsVisible);
         player.BeginSeek();
         clock.Advance(4);
@@ -224,6 +226,33 @@ public sealed class PlayerViewModelTests
         Assert.False(player.AreControlsLocked);
         Assert.True(player.AreControlsVisible);
         Assert.False(player.ToggleControlsLockCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void FullscreenPointerMovementOnlyRevealsHiddenControlsAtTheEdges()
+    {
+        var clock = new ManualClock();
+        var playback = new FakePlayback();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), timeProvider: clock);
+        playback.Emit(new(PlaybackState.Playing, "film.mkv", 1000, 20000, true, Revision: 1));
+        player.IsFullscreen = true;
+        clock.Advance(4);
+        player.UpdateControlsVisibility(false);
+        player.NotifyPointerMovement(360, 720);
+        Assert.False(player.AreControlsVisible);
+        player.NotifyPointerMovement(30, 720);
+        Assert.True(player.AreControlsVisible);
+        clock.Advance(4);
+        player.UpdateControlsVisibility(false);
+        player.NotifyPointerMovement(700, 720);
+        Assert.True(player.AreControlsVisible);
+        player.ToggleControlsLockCommand.Execute(null);
+        player.NotifyPointerMovement(700, 720);
+        Assert.False(player.AreControlsVisible);
+        player.IsFullscreen = false;
+        player.NotifyPointerMovement(360, 720);
+        Assert.True(player.AreControlsVisible);
     }
 
     private sealed class ManualClock : TimeProvider

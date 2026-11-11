@@ -311,7 +311,7 @@ public sealed class ScannerTests : IDisposable
     }
 
     [Fact]
-    public async Task PartialScanRemovesMissingSeasonButKeepsUnreadableSeasonAndUnrelatedGroups()
+    public async Task PartialScanRemovesMissingAndUnreadableSeasonsButKeepsUnrelatedGroups()
     {
         var path = Video(@"Show\Season 01\Show.S01E01.mkv");
         var blockedPath = Video(@"Show\Season 02\Show.S02E01.mkv");
@@ -330,10 +330,10 @@ public sealed class ScannerTests : IDisposable
         var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
         Assert.False(catalog.Items.ContainsKey(removedSeason.Id));
         Assert.Null(catalog.FindFile(path));
-        Assert.NotNull(catalog.FindFile(blockedPath));
-        Assert.Equal(2, Assert.Single(catalog.Children(show.Id)).SeasonNumber);
-        Assert.Single(catalog.Files(show.Id));
-        Assert.True(catalog.Items.ContainsKey(emptyGroup.Id));
+        Assert.Null(catalog.FindFile(blockedPath));
+        Assert.False(catalog.Items.ContainsKey(show.Id));
+        Assert.Empty(catalog.Files(show.Id));
+        Assert.Equal(emptyGroup.Id, Assert.Single(catalog.Items.Values).Id);
     }
 
     [Fact]
@@ -356,7 +356,7 @@ public sealed class ScannerTests : IDisposable
     }
 
     [Fact]
-    public async Task UnavailableRootAndUnreadableSubtreeRetainRecordsAndLastSuccessfulScan()
+    public async Task UnavailableRootAndUnreadableSubtreeLeaveBrowsingButRetainHistoryForTheirReturn()
     {
         var path = Video(@"Movie\Movie.mkv");
         using var services = Services();
@@ -364,19 +364,110 @@ public sealed class ScannerTests : IDisposable
         var root = await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
         var scanner = services.GetRequiredService<ILibraryScannerService>();
         await scanner.ScanAsync();
+        var file = (await library.FindFileAsync(path))!;
+        var progress = await services.GetRequiredService<IProgressRepository>().SaveAsync(new PlaybackProgress
+            { MediaFileId = file.Id, PositionMs = 1000 });
         var scanned = Assert.Single(await library.GetRootsAsync());
         await services.GetRequiredService<IScanRepository>().CommitAsync(root.Id, new([], [],
             [Path.GetDirectoryName(path)!], [new(path, "Simulated unreadable subtree")]));
-        Assert.True((await library.FindFileAsync(path))!.IsAvailable);
+        Assert.False((await library.FindFileAsync(path))!.IsAvailable);
         Assert.Equal(scanned.LastScanUtc, Assert.Single(await library.GetRootsAsync()).LastScanUtc);
+        Assert.Empty(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+        await scanner.ScanAsync();
         Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+        scanned = Assert.Single(await library.GetRootsAsync());
         Directory.Move(MediaRoot, MediaRoot + "Offline");
         var result = await scanner.ScanAsync();
         Assert.Equal(0, result.CompletedRoots);
         Assert.NotEmpty(result.Warnings);
-        Assert.True((await library.FindFileAsync(path))!.IsAvailable);
+        Assert.False((await library.FindFileAsync(path))!.IsAvailable);
         Assert.Equal(scanned.LastScanUtc, Assert.Single(await library.GetRootsAsync()).LastScanUtc);
+        Assert.Empty(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+        Assert.Equal(progress, await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id));
+        Directory.Move(MediaRoot + "Offline", MediaRoot);
+        await scanner.ScanAsync();
+        Assert.True((await library.FindFileAsync(path))!.IsAvailable);
+        Assert.Equal(file.Id, (await library.FindFileAsync(path))!.Id);
+        Assert.Equal(progress, await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id));
         Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+    }
+
+    [Fact]
+    public async Task UnreadableSubtreeDisappearsWhileDiscoveredFilesAndOtherRootsRemain()
+    {
+        var blocked = Video(@"Blocked\Movie.mkv");
+        var readable = Video(@"Readable\Movie.mkv");
+        var other = Video(@"Other\Movie.mkv");
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        var root = await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        await services.GetRequiredService<ILibraryScannerService>().ScanAsync();
+        // Give this file to a separate root, which this commit must leave untouched.
+        var otherRoot = await library.SaveRootAsync(new LibraryRoot { Path = Path.GetDirectoryName(other)! });
+        await services.GetRequiredService<IScanRepository>().CommitAsync(otherRoot.Id,
+            new FolderScanner().Read(otherRoot.Path));
+        var scan = new FolderScanner().Read(MediaRoot);
+        await services.GetRequiredService<IScanRepository>().CommitAsync(root.Id, scan with
+        {
+            Files = scan.Files.Where(f => f.Path == readable).ToArray(),
+            UnreadablePaths = [Path.GetDirectoryName(blocked)!],
+            Warnings = [new(blocked, "Simulated unreadable subtree")]
+        });
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.Null(catalog.FindFile(blocked));
+        Assert.NotNull(catalog.FindFile(readable));
+        Assert.NotNull(catalog.FindFile(other));
+        Assert.DoesNotContain(catalog.Items.Values, i => i.Title == "Blocked");
+    }
+
+    [Fact]
+    public async Task EmptyScannedShowsAndTheirOldIdentitiesStayOutOfBrowsingAfterRestart()
+    {
+        var path = Video(@"Movie\Movie.mkv");
+        Directory.CreateDirectory(Path.Combine(MediaRoot, @"Empty Show\Season 01"));
+        long[] emptyIds;
+        using (var services = Services())
+        {
+            var library = services.GetRequiredService<ILibraryRepository>();
+            await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+            var scanner = services.GetRequiredService<ILibraryScannerService>();
+            await scanner.ScanAsync();
+            emptyIds = (await library.GetItemsAsync()).Where(i => i.ItemType is LibraryItemType.Show or LibraryItemType.Season)
+                .Select(i => i.Id).ToArray();
+            Assert.Single(emptyIds);
+            var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+            Assert.Equal("Movie", Assert.Single(catalog.Items.Values).Title);
+            Assert.NotNull(catalog.FindFile(path));
+            Directory.Move(Path.Combine(MediaRoot, "Empty Show"), Path.Combine(MediaRoot, "Renamed Empty Show"));
+            await scanner.ScanAsync();
+        }
+        using (var reopened = Services())
+        {
+            var snapshot = await reopened.GetRequiredService<ILibraryRepository>().GetSnapshotAsync();
+            Assert.All(emptyIds, id => Assert.Contains(id, snapshot.ScannedItemIds));
+            var catalog = new LibraryCatalog(snapshot);
+            Assert.Equal("Movie", Assert.Single(catalog.Items.Values).Title);
+            Assert.NotNull(catalog.FindFile(path));
+        }
+    }
+
+    [Fact]
+    public async Task CancelingAnUnreadableRootScanKeepsThePreviouslySavedLibrary()
+    {
+        var path = Video(@"Movie\Movie.mkv");
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        var scanner = services.GetRequiredService<ILibraryScannerService>();
+        await scanner.ScanAsync();
+        var scanned = Assert.Single(await library.GetRootsAsync());
+        Directory.Move(MediaRoot, MediaRoot + "Offline");
+        using var cancellation = new CancellationTokenSource();
+        var progress = new CallbackProgress(p => { if (p.Stage == "Saving") cancellation.Cancel(); });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scanner.ScanAsync(progress, cancellation.Token));
+        Assert.True((await library.FindFileAsync(path))!.IsAvailable);
+        Assert.Single(new LibraryCatalog(await library.GetSnapshotAsync()).Items);
+        Assert.Equal(scanned.LastScanUtc, Assert.Single(await library.GetRootsAsync()).LastScanUtc);
     }
 
     [Fact]

@@ -110,10 +110,6 @@
                         <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="27" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16" Foreground="{DynamicResource AccentHoverBrush}" />
                         <Image Source="{Binding PosterPath, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" AutomationProperties.Name="Poster" />
                         <Border Background="#DA15151B" CornerRadius="4" Padding="7,4" Margin="10" VerticalAlignment="Top" HorizontalAlignment="Left"><TextBlock Text="{Binding Kind}" FontSize="10" /></Border>
-                        <Border Background="#DA15151B" CornerRadius="4" Padding="7,4" Margin="10" VerticalAlignment="Bottom" HorizontalAlignment="Left">
-                            <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsAvailable}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></Border.Style>
-                            <TextBlock Text="Drive unavailable" FontSize="10" Foreground="{DynamicResource WarningBrush}" />
-                        </Border>
                     </Grid>
                 </Border>
                 <StackPanel Margin="12,12,12,14">

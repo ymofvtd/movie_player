@@ -9,6 +9,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\MyCinema.ico</ApplicationIcon>
     <!-- Keep nested projects out of the root application's SDK globs. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);src\**;tests\**</DefaultItemExcludes>
   </PropertyGroup>
@@ -28,6 +30,7 @@
 
   <ItemGroup>
     <None Update="README.md;plan.md;THIRD-PARTY-NOTICES.md;docs\RELEASE-VALIDATION.md;licenses\**" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="Assets\MyCinema.ico" />
   </ItemGroup>
 
 </Project>

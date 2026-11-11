@@ -147,6 +147,68 @@ public sealed class EpisodeSidebarTests : IDisposable
         Assert.Equal(25_000, (await Progress.GetAsync(_first.Id))!.PositionMs);
     }
 
+    [Theory]
+    [InlineData(89_999, false)]
+    [InlineData(90_000, true)]
+    [InlineData(96_000, true)]
+    public async Task AdvancingAtNinetyPercentCompletesOnlyTheOutgoingEpisode(long position, bool expected)
+    {
+        await SetupAsync();
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        _playback.Position(position);
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        await Player.FlushProgressAsync();
+        await Store.RefreshAsync();
+        var saved = (await Progress.GetAsync(_first.Id))!;
+        Assert.Equal(expected, saved.IsCompleted);
+        Assert.Equal(position, saved.PositionMs);
+        Assert.Equal(!expected, Store.Catalog.ContinueWatchingFiles.Any(f => f.Id == _first.Id));
+        Assert.False((await Progress.GetAsync(_second.Id))!.IsCompleted);
+        _playback.Position(10_000);
+        await Player.FlushProgressAsync();
+        Assert.Equal(expected, (await Progress.GetAsync(_first.Id))!.IsCompleted);
+        Assert.False((await Progress.GetAsync(_second.Id))!.IsCompleted);
+    }
+
+    [Fact]
+    public async Task SelectingALaterSeasonCompletesTheEpisodeButGoingBackOrOpeningAMovieDoesNot()
+    {
+        await SetupAsync();
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        _playback.Position(90_000);
+        Sidebar.SelectedSeason = Sidebar.Seasons.Last();
+        await Player.PlayEpisodeCommand.ExecuteAsync(Assert.Single(Sidebar.Episodes));
+        await Player.FlushProgressAsync();
+        Assert.True((await Progress.GetAsync(_first.Id))!.IsCompleted);
+        _playback.Position(95_000);
+        await Player.PreviousEpisodeCommand.ExecuteAsync(null);
+        await Player.FlushProgressAsync();
+        Assert.False((await Progress.GetAsync(_third.Id))!.IsCompleted);
+        _playback.Position(95_000);
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_movie);
+        await Player.FlushProgressAsync();
+        Assert.False((await Progress.GetAsync(_second.Id))!.IsCompleted);
+    }
+
+    [Fact]
+    public async Task CancelledOrFailedNextEpisodeKeepsTheOutgoingEpisodeUnwatched()
+    {
+        await SetupAsync();
+        await Progress.SaveAsync(new() { MediaFileId = _second.Id, PositionMs = 40_000, DurationMs = 100_000 });
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        _playback.Position(95_000);
+        _dialogs.Choice = ResumeChoice.Cancel;
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        await Player.FlushProgressAsync();
+        Assert.False((await Progress.GetAsync(_first.Id))!.IsCompleted);
+        Assert.Equal(_first.FilePath, _playback.Current.FilePath);
+        _playback.Emit(new(PlaybackState.Opening, _second.FilePath, Revision: _playback.Current.Revision + 1)
+            { SessionId = _playback.Current.SessionId + 1 });
+        _playback.Emit(_playback.Current with { State = PlaybackState.Error, Revision = _playback.Current.Revision + 1 });
+        await Player.FlushProgressAsync();
+        Assert.False((await Progress.GetAsync(_first.Id))!.IsCompleted);
+    }
+
     [Fact]
     public async Task EpisodeCommandsExcludeOtherOpenCommandsWhileSwitching()
     {

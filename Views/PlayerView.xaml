@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:Person_Movie_Player.Views"
              Loaded="OnLoaded" Unloaded="OnUnloaded" IsVisibleChanged="OnVisibilityChanged"
-             PreviewMouseMove="OnPlayerMouseMove" PreviewMouseDown="OnPlayerInteraction" PreviewKeyDown="OnPlayerInteraction">
+             PreviewMouseMove="OnPlayerMouseMove" PreviewMouseDown="OnPlayerInteraction" PreviewMouseWheel="OnPlayerInteraction" PreviewKeyDown="OnPlayerInteraction">
     <Grid x:Name="PlayerLayout" Background="Black">
         <!-- The native viewport never participates in the controls' row sizing. -->
         <Grid x:Name="VideoHost" ClipToBounds="True">
@@ -14,36 +14,116 @@
                 <TextBlock Text="MKV, MP4, and more  ·  Ctrl+O" Foreground="{DynamicResource SecondaryTextBrush}" TextAlignment="Center" />
             </StackPanel>
         </Grid>
-        <!-- Hosted in VideoView.Content during playback to render above VLC's native window. -->
+        <!-- Hosted in a transparent native child during playback to render above VLC. -->
         <Grid x:Name="PlayerOverlay" Background="#02000000" Focusable="True"
               TextElement.Foreground="{DynamicResource TextBrush}" TextElement.FontFamily="Segoe UI" TextElement.FontSize="14"
               UseLayoutRounding="True" SnapsToDevicePixels="True"
               MouseLeftButtonDown="OnVideoMouseDown" PreviewKeyDown="OnVideoKeyDown"
-              PreviewMouseDown="OnPlayerInteraction" MouseMove="OnPlayerMouseMove">
+              PreviewMouseDown="OnPlayerInteraction" PreviewMouseWheel="OnPlayerInteraction" MouseMove="OnPlayerMouseMove">
+        <Grid.Resources>
+            <Style x:Key="PlayerSurfaceStyle" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource PlayerOverlayBrush}" />
+                <Style.Triggers><DataTrigger Binding="{Binding IsFullscreen}" Value="True">
+                    <Setter Property="Background" Value="Transparent" />
+                </DataTrigger></Style.Triggers>
+            </Style>
+            <Style x:Key="PlayerButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+                <Style.Triggers><DataTrigger Binding="{Binding IsFullscreen}" Value="True">
+                    <Setter Property="Background" Value="Transparent" />
+                </DataTrigger></Style.Triggers>
+            </Style>
+            <Style x:Key="PlayerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource PlayerButtonStyle}">
+                <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="0" /><Setter Property="FontSize" Value="16" />
+                <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                    <Border x:Name="IconSurface" Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="IconSurface" Property="Background" Value="#24FFFFFF" /></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="IconSurface" Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger>
+                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="IconSurface" Property="Background" Value="#40FFFFFF" /></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
+            <Style x:Key="PlayerComboStyle" TargetType="ComboBox" BasedOn="{StaticResource LibraryComboStyle}">
+                <Setter Property="Height" Value="32" />
+                <Setter Property="FontSize" Value="12" /><Setter Property="Background" Value="Transparent" />
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="MenuSurface" Background="Transparent" CornerRadius="6">
+                                    <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                </Border>
+                                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="MenuSurface" Property="Background" Value="#24FFFFFF" /></Trigger></ControlTemplate.Triggers>
+                            </ControlTemplate></ToggleButton.Template>
+                        </ToggleButton>
+                        <TextBlock Text="{TemplateBinding Tag}" Margin="9,0,23,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False" />
+                        <Border x:Name="MenuFocus" BorderThickness="1" BorderBrush="Transparent" CornerRadius="6" IsHitTestVisible="False" />
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Top" AllowsTransparency="True" Focusable="False">
+                            <Border Background="{DynamicResource ElevatedSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="240" MaxWidth="400">
+                                <StackPanel>
+                                    <ScrollViewer MaxHeight="280" CanContentScroll="True" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" /></ScrollViewer>
+                                    <Button x:Name="LoadSubtitleMenuItem" Content="Load subtitle file…" Command="{Binding LoadSubtitleCommand}"
+                                            Click="OnLoadSubtitleClick" Style="{StaticResource PlayerButtonStyle}" FontSize="12" Padding="10,8" Margin="0,4,0,0" Visibility="Collapsed"
+                                            AutomationProperties.Name="Load subtitle file" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="MenuFocus" Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
+                        <Trigger Property="AutomationProperties.Name" Value="Subtitle track"><Setter TargetName="LoadSubtitleMenuItem" Property="Visibility" Value="Visible" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
+            <Style x:Key="PlayerSliderStyle" TargetType="{x:Type views:DragSlider}">
+                <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}" />
+                <Setter Property="Height" Value="26" /><Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type views:DragSlider}">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}"
+                               Orientation="{TemplateBinding Orientation}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                            <Track.DecreaseRepeatButton><RepeatButton Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="{DynamicResource AccentBrush}" CornerRadius="2" VerticalAlignment="Center" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+                            <Track.Thumb><Thumb Width="12" Height="12" Focusable="False"><Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Fill="{DynamicResource TextBrush}" /></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                            <Track.IncreaseRepeatButton><RepeatButton Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" Background="#55FFFFFF" CornerRadius="2" VerticalAlignment="Center" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" /><RowDefinition Height="*" />
             <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border x:Name="PlayerHeader" Background="{DynamicResource PlayerOverlayBrush}" Padding="16,12"
+        <Border x:Name="PlayerHeader" Style="{StaticResource PlayerSurfaceStyle}" Padding="16,12"
                 Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="{Binding Sidebar.ToggleLabel}" Command="{Binding Sidebar.ToggleCommand}"
                         Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}"
-                        Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" ToolTip="Show or hide the episode panel" />
+                        Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0" ToolTip="Show or hide the episode panel" />
                 <Button DockPanel.Dock="Right" Content="Open video" Command="{Binding OpenFileCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}" Margin="16,0,0,0" ToolTip="Open a video (Ctrl+O)" />
+                        Style="{StaticResource PlayerButtonStyle}" Margin="16,0,0,0" ToolTip="Open a video (Ctrl+O)" />
                 <Button DockPanel.Dock="Right" Content="Lock controls" Command="{Binding ToggleControlsLockCommand}"
                         Visibility="{Binding CanLockControls, Converter={StaticResource BooleanToVisibility}}"
-                        Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0"
+                        Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0"
                         ToolTip="Hide controls and ignore accidental input; unlock with L or the unlock button"
                         AutomationProperties.Name="Lock controls" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
                             Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
                     <Button Content="&#xE892;" FontFamily="Segoe MDL2 Assets" Command="{Binding PreviousEpisodeCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,9" ToolTip="Previous available episode (P)"
+                            Style="{StaticResource PlayerButtonStyle}" Padding="8,9" ToolTip="Previous available episode (P)"
                             AutomationProperties.Name="Previous episode" />
                     <Button Content="&#xE893;" FontFamily="Segoe MDL2 Assets" Command="{Binding NextEpisodeCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,9" Margin="5,0,0,0"
+                            Style="{StaticResource PlayerButtonStyle}" Padding="8,9" Margin="5,0,0,0"
                             ToolTip="Next available episode, including the following season (N)" AutomationProperties.Name="Next episode" />
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center">
@@ -60,7 +140,7 @@
                 Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibility}}">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Dismiss" Command="{Binding DismissErrorCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}" VerticalAlignment="Top" Margin="12,0,0,0" />
+                        Style="{StaticResource PlayerButtonStyle}" VerticalAlignment="Top" Margin="12,0,0,0" />
                 <StackPanel>
                     <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Assertive" />
                     <Expander Header="Details" Margin="0,5,0,0" Foreground="{DynamicResource SecondaryTextBrush}"
@@ -76,7 +156,7 @@
                 Visibility="{Binding HasHistoryWarning, Converter={StaticResource BooleanToVisibility}}">
             <TextBlock Text="{Binding HistoryWarning}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
         </Border>
-        <Border x:Name="PlaybackControls" Grid.Row="4" Background="{DynamicResource PlayerOverlayBrush}" Padding="16,10,16,14"
+        <Border x:Name="PlaybackControls" Grid.Row="4" Style="{StaticResource PlayerSurfaceStyle}" Padding="16,6"
                 Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <StackPanel>
                 <StackPanel Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
@@ -85,84 +165,67 @@
                     <TextBlock Text="{Binding Sidebar.Warning}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11"
                                Visibility="{Binding Sidebar.HasWarning, Converter={StaticResource BooleanToVisibility}}" />
                 </StackPanel>
-                <Expander x:Name="PlaybackOptionsPanel" Header="Audio, subtitles &amp; picture" FontSize="11" Margin="0,0,0,8"
-                          Foreground="{DynamicResource SecondaryTextBrush}" AutomationProperties.Name="Playback options">
-                <StackPanel Margin="0,10,0,0">
-                <Grid Margin="0,0,0,12">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <StackPanel Margin="0,0,12,0">
-                        <TextBlock Text="Audio language" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,5" />
-                        <ComboBox ItemsSource="{Binding AudioTracks}" SelectedItem="{Binding SelectedAudioTrack, Mode=TwoWay}"
-                                  Style="{StaticResource LibraryComboStyle}" IsEnabled="{Binding HasAudioTracks}"
-                                  AutomationProperties.Name="Audio language" ToolTip="{Binding AudioTrackHint}">
-                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                        <TextBlock Text="Subtitles" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,5" />
-                        <ComboBox x:Name="SubtitleSelector" ItemsSource="{Binding SubtitleTracks}" SelectedItem="{Binding SelectedSubtitleTrack, Mode=TwoWay}"
-                                  Style="{StaticResource LibraryComboStyle}" IsEnabled="{Binding CanSelectTracks}"
-                                  AutomationProperties.Name="Subtitle track" ToolTip="Choose a subtitle track, or Off to hide subtitles">
-                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </StackPanel>
-                    <Button Grid.Column="2" Content="Load subtitles…" Command="{Binding LoadSubtitleCommand}" VerticalAlignment="Bottom"
-                            Style="{StaticResource SecondaryButtonStyle}" Padding="10,9" ToolTip="Load a local SRT, ASS, SSA, VTT, SUB, or IDX file" />
-                </Grid>
-                <DockPanel Margin="0,0,0,12" LastChildFill="False">
-                    <TextBlock Text="Speed" VerticalAlignment="Center" FontSize="11" Margin="0,0,8,0"
-                               Foreground="{DynamicResource SecondaryTextBrush}" />
-                    <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding SelectedSpeed, Mode=TwoWay}"
-                              Style="{StaticResource LibraryComboStyle}" Width="86" IsEnabled="{Binding CanAdjustPicture}"
-                              AutomationProperties.Name="Playback speed" ToolTip="Playback speed for this session">
-                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding StringFormat={}{0:0.##}×}" /></DataTemplate></ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock Text="Aspect ratio" VerticalAlignment="Center" FontSize="11" Margin="18,0,8,0"
-                               Foreground="{DynamicResource SecondaryTextBrush}" />
-                    <ComboBox ItemsSource="{Binding AspectRatioChoices}" SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
-                              DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" Width="100"
-                              IsEnabled="{Binding CanAdjustPicture}" AutomationProperties.Name="Video aspect ratio"
-                              ToolTip="Original preserves the file's picture shape; choose a ratio to correct stretched video" />
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding RemainingTime, StringFormat={}{0} left}" FontFamily="Consolas"
-                               Foreground="{DynamicResource SecondaryTextBrush}" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0" />
-                </DockPanel>
-                </StackPanel>
-                </Expander>
-                <Grid Margin="0,0,0,10">
+                <Grid x:Name="SeekBar" Margin="0,0,0,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding CurrentTime}" FontFamily="Consolas" VerticalAlignment="Center" />
-                    <Slider Grid.Column="1" Minimum="0" Maximum="{Binding DurationMs}" Value="{Binding SeekPositionMs, Mode=TwoWay}"
-                            IsEnabled="{Binding CanSeek}" Margin="14,0" IsMoveToPointEnabled="True" VerticalAlignment="Center"
-                            PreviewMouseLeftButtonDown="OnSeekStarted" PreviewMouseLeftButtonUp="OnSeekCompleted"
-                            LostMouseCapture="OnSeekCompleted" AutomationProperties.Name="Playback position"
+                    <TextBlock Text="{Binding CurrentTime}" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" />
+                    <views:DragSlider x:Name="PositionSlider" Grid.Column="1" Minimum="0" Maximum="{Binding DurationMs}" Value="{Binding SeekPositionMs, Mode=TwoWay}"
+                            Style="{StaticResource PlayerSliderStyle}" IsEnabled="{Binding CanSeek}" Margin="12,0"
+                            ScrubStarted="OnSeekStarted" ScrubCompleted="OnSeekCompleted" AutomationProperties.Name="Playback position"
                             ToolTip="Seek through the video" Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Grid.Column="2" Text="{Binding TotalTime}" FontFamily="Consolas" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding TotalTime}" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center"
+                               ToolTip="{Binding RemainingTime, StringFormat={}{0} left}" />
                 </Grid>
-                <DockPanel LastChildFill="False">
-                    <Button Content="−10s" Command="{Binding RewindCommand}" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="10,9" ToolTip="Rewind 10 seconds (Left arrow)" AutomationProperties.Name="Rewind 10 seconds" />
-                    <Button Content="{Binding PlayPauseLabel}" Command="{Binding PlayPauseCommand}" MinWidth="62"
-                            Style="{StaticResource PrimaryButtonStyle}" Padding="10,9" Margin="7,0" ToolTip="Play or pause (Space)" />
-                    <Button Content="+10s" Command="{Binding ForwardCommand}" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="10,9" ToolTip="Forward 10 seconds (Right arrow)" AutomationProperties.Name="Forward 10 seconds" />
-                    <Button Content="Stop" Command="{Binding StopCommand}" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="10,9" Margin="7,0,0,0" />
-                    <Button DockPanel.Dock="Right" Content="{Binding FullscreenLabel}" Command="{Binding FullscreenCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Padding="10,9" ToolTip="Toggle fullscreen (F); Escape to exit" />
-                    <Slider DockPanel.Dock="Right" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}"
-                            Width="80" VerticalAlignment="Center" Margin="8,0,14,0" TickFrequency="5"
-                            AutomationProperties.Name="Volume" ToolTip="Volume (Up / Down arrows)" />
-                    <Button DockPanel.Dock="Right" Content="{Binding MuteLabel}" Command="{Binding MuteCommand}"
-                            Style="{StaticResource SecondaryButtonStyle}" Padding="10,9" ToolTip="Mute or unmute (M)" />
-                </DockPanel>
+                <Grid x:Name="PlaybackToolbar">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Command="{Binding PlayPauseCommand}" ToolTip="Play or pause (Space)" AutomationProperties.Name="{Binding PlayPauseLabel}">
+                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PlayerIconButtonStyle}">
+                                <Setter Property="Content" Value="&#xE768;" />
+                                <Style.Triggers><DataTrigger Binding="{Binding IsPlaying}" Value="True"><Setter Property="Content" Value="&#xE769;" /></DataTrigger></Style.Triggers>
+                            </Style></Button.Style>
+                        </Button>
+                        <Button Content="&#xE71A;" Command="{Binding StopCommand}" Style="{StaticResource PlayerIconButtonStyle}" Margin="2,0,6,0" ToolTip="Stop" AutomationProperties.Name="Stop" />
+                        <Button Command="{Binding MuteCommand}" ToolTip="Mute or unmute (M)" AutomationProperties.Name="{Binding MuteLabel}">
+                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PlayerIconButtonStyle}">
+                                <Setter Property="Content" Value="&#xE767;" />
+                                <Style.Triggers><DataTrigger Binding="{Binding IsMuted}" Value="True"><Setter Property="Content" Value="&#xE74F;" /></DataTrigger></Style.Triggers>
+                            </Style></Button.Style>
+                        </Button>
+                        <views:DragSlider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" Width="80" Margin="4,0,12,0"
+                                          Style="{StaticResource PlayerSliderStyle}" AutomationProperties.Name="Volume" ToolTip="{Binding Volume, StringFormat=Volume: {0}%}" />
+                    </StackPanel>
+                    <StackPanel x:Name="PlaybackOptionsPanel" Grid.Column="2" Orientation="Horizontal" AutomationProperties.Name="Playback options">
+                        <ComboBox x:Name="AudioSelector" ItemsSource="{Binding AudioTracks}" SelectedItem="{Binding SelectedAudioTrack, Mode=TwoWay}"
+                                  Tag="Audio" Width="80" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding HasAudioTracks}"
+                                  AutomationProperties.Name="Audio language">
+                            <ComboBox.ToolTip><StackPanel><TextBlock Text="Audio language" /><TextBlock Text="{Binding SelectedAudioTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox x:Name="SubtitleSelector" ItemsSource="{Binding SubtitleTracks}" SelectedItem="{Binding SelectedSubtitleTrack, Mode=TwoWay}"
+                                  Tag="Subtitles" Width="100" Margin="4,0,0,0" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding CanSelectTracks}"
+                                  AutomationProperties.Name="Subtitle track">
+                            <ComboBox.ToolTip><StackPanel><TextBlock Text="Subtitles (S)" /><TextBlock Text="{Binding SelectedSubtitleTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox x:Name="AspectRatioSelector" ItemsSource="{Binding AspectRatioChoices}" SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
+                                  Tag="{Binding SelectedAspectRatio.Label}" DisplayMemberPath="Label" Width="90" Margin="4,0,8,0" Style="{StaticResource PlayerComboStyle}"
+                                  IsEnabled="{Binding CanAdjustPicture}" AutomationProperties.Name="Video aspect ratio" ToolTip="Video aspect ratio" />
+                        <Button Command="{Binding FullscreenCommand}" ToolTip="Toggle fullscreen (F); Escape to exit" AutomationProperties.Name="{Binding FullscreenLabel}">
+                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PlayerIconButtonStyle}">
+                                <Setter Property="Content" Value="&#xE740;" />
+                                <Style.Triggers><DataTrigger Binding="{Binding IsFullscreen}" Value="True"><Setter Property="Content" Value="&#xE73F;" /></DataTrigger></Style.Triggers>
+                            </Style></Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Grid>
             </StackPanel>
         </Border>
         <Button x:Name="UnlockControlsButton" Grid.RowSpan="5" Content="Unlock (L)" Command="{Binding ToggleControlsLockCommand}"
                 Visibility="{Binding AreControlsLocked, Converter={StaticResource BooleanToVisibility}}"
                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16" Cursor="Hand"
-                Style="{StaticResource SecondaryButtonStyle}" ToolTip="Unlock playback controls (L); Escape exits fullscreen"
+                Style="{StaticResource PlayerButtonStyle}" ToolTip="Unlock playback controls (L); Escape exits fullscreen"
                 AutomationProperties.Name="Unlock controls" />
         </Grid>
     </Grid>

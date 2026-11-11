@@ -206,10 +206,17 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         if (!AreControlsLocked) AreControlsVisible = true;
     }
 
+    public void NotifyPointerMovement(double y, double height)
+    {
+        // Incidental movement over the picture should not bring controls back over subtitles.
+        if (!IsFullscreen || !IsPlaying || HasError || AreControlsVisible ||
+            height > 0 && (y <= 64 || y >= height - 96)) NotifyInteraction();
+    }
+
     public void UpdateControlsVisibility(bool interactingWithControls)
     {
         if (AreControlsLocked) return;
-        if (!IsFullscreen || !IsPlaying || HasError || _isSeeking || interactingWithControls) NotifyInteraction();
+        if (!IsPlaying || HasError || _isSeeking || interactingWithControls) NotifyInteraction();
         else if (_timeProvider.GetElapsedTime(_lastInteraction) >= TimeSpan.FromSeconds(3)) AreControlsVisible = false;
     }
 

@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
-using LibVLCSharp.WPF;
 using MyCinema.Core.Playback;
 using MyCinema.Infrastructure.Services;
 using Person_Movie_Player.Services;
@@ -14,7 +13,7 @@ namespace Person_Movie_Player.Views;
 
 public partial class PlayerView : UserControl
 {
-    private VideoView? _video;
+    private NativeVideoHost? _video;
     private PlayerViewModel? _viewModel;
     private readonly DispatcherTimer _idleTimer;
     private Point? _lastMousePosition;
@@ -48,12 +47,11 @@ public partial class PlayerView : UserControl
         if (!IsLoaded || _viewModel?.Playback is not PlaybackService playback || playback.MediaPlayer is null) return;
         if (_video is null)
         {
-            // VideoView.Content uses VLC's supported transparent overlay window. Ordinary
-            // WPF siblings cannot render above the native video (the airspace restriction).
+            // A transparent native child avoids WPF airspace while sharing the owner's animation.
             PlayerLayout.Children.Remove(PlayerOverlay);
             PlayerOverlay.DataContext = _viewModel;
             PlayerOverlay.Visibility = IsVisible ? Visibility.Visible : Visibility.Collapsed;
-            _video = new VideoView { Content = PlayerOverlay, MediaPlayer = playback.MediaPlayer, DataContext = _viewModel };
+            _video = new NativeVideoHost(playback.MediaPlayer, PlayerOverlay) { DataContext = _viewModel };
             VideoHost.Children.Add(_video);
             IdleMessage.Visibility = Visibility.Collapsed;
         }
@@ -70,7 +68,7 @@ public partial class PlayerView : UserControl
 
     private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        // VideoView uses an owned overlay window; hide its contents with the page as well.
+        // The controls have a separate presentation source; keep page visibility explicit.
         PlayerOverlay.Visibility = IsVisible ? Visibility.Visible : Visibility.Collapsed;
         if (IsVisible && IsLoaded) { _viewModel?.NotifyInteraction(); _idleTimer.Start(); }
         else _idleTimer.Stop();
@@ -80,7 +78,7 @@ public partial class PlayerView : UserControl
     {
         if (e.Handled) return;
         _viewModel?.NotifyInteraction();
-        // VideoView's content lives in an owned window, outside the main window's focus scope.
+        // The native child has its own presentation source and keyboard focus scope.
         if (e.Key == Key.Tab)
         {
             if (_viewModel?.AreControlsLocked == true)
@@ -107,14 +105,15 @@ public partial class PlayerView : UserControl
         var position = ((UIElement)sender).PointToScreen(e.GetPosition((IInputElement)sender));
         if (_lastMousePosition == position) return;
         _lastMousePosition = position;
-        _viewModel?.NotifyInteraction();
+        var local = e.GetPosition(PlayerOverlay);
+        _viewModel?.NotifyPointerMovement(local.Y, PlayerOverlay.ActualHeight);
     }
 
     private void OnIdleTick(object? sender, EventArgs e)
     {
-        var usingControls = PlayerHeader.IsMouseOver || PlayerHeader.IsKeyboardFocusWithin ||
-            PlaybackControls.IsMouseOver || PlaybackControls.IsKeyboardFocusWithin ||
-            EpisodePanel.IsMouseOver || EpisodePanel.IsKeyboardFocusWithin ||
+        // A stationary pointer or focus left by clicking Play must not pin the overlay open.
+        var usingControls = PlayerHeader.IsMouseCaptureWithin || PlaybackControls.IsMouseCaptureWithin ||
+            EpisodePanel.IsMouseCaptureWithin ||
             DescendantMenuIsOpen(PlaybackControls) || DescendantMenuIsOpen(EpisodePanel);
         _viewModel?.UpdateControlsVisibility(usingControls);
     }
@@ -130,21 +129,23 @@ public partial class PlayerView : UserControl
     private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(PlayerViewModel.AreControlsLocked) ||
-            e.PropertyName == nameof(PlayerViewModel.IsFullscreen) && _viewModel?.IsFullscreen == true)
+            e.PropertyName == nameof(PlayerViewModel.IsFullscreen) && _viewModel?.IsFullscreen == true ||
+            e.PropertyName == nameof(PlayerViewModel.AreControlsVisible) && _viewModel?.AreControlsVisible == false &&
+            (PlayerHeader.IsKeyboardFocusWithin || PlaybackControls.IsKeyboardFocusWithin || EpisodePanel.IsKeyboardFocusWithin))
             PlayerOverlay.Focus();
         PlayerOverlay.Cursor = _viewModel?.AreControlsVisible == false ? Cursors.None : null;
     }
 
     private void OnSubtitleMenuRequested(object? sender, EventArgs e)
     {
-        PlaybackOptionsPanel.IsExpanded = true;
         PlaybackControls.UpdateLayout();
         SubtitleSelector.Focus();
         SubtitleSelector.IsDropDownOpen = true;
     }
 
-    private void OnSeekStarted(object sender, MouseButtonEventArgs e) => _viewModel?.BeginSeek();
-    private void OnSeekCompleted(object sender, RoutedEventArgs e) => _viewModel?.CommitSeek();
+    private void OnLoadSubtitleClick(object sender, RoutedEventArgs e) => SubtitleSelector.IsDropDownOpen = false;
+    private void OnSeekStarted(object? sender, EventArgs e) => _viewModel?.BeginSeek();
+    private void OnSeekCompleted(object? sender, EventArgs e) => _viewModel?.CommitSeek();
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
@@ -158,10 +159,6 @@ public partial class PlayerView : UserControl
         _viewModel = null;
         if (_video is not null)
         {
-            _video.MediaPlayer = null;
-            // VideoView internally clears Content after moving it into its owned window;
-            // replace it with an empty element to release the existing overlay's parent.
-            _video.Content = new Grid();
             _video.Dispose();
             VideoHost.Children.Remove(_video);
             _video = null;

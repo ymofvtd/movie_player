@@ -43,7 +43,7 @@
                         <Button Content="Mark unwatched" Command="{Binding MarkUnwatchedCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
                         <Button Content="Reset progress" Command="{Binding ResetProgressCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,0,8" />
                     </WrapPanel>
-                    <TextBlock Text="Reconnect the drive or rescan in Settings if a file is unavailable." FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                    <TextBlock Text="Rescan in Settings after adding, moving, or removing files." FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
                 </StackPanel>
             </Border>
             <StackPanel Visibility="{Binding IsShow, Converter={StaticResource BooleanToVisibility}}">

@@ -4,7 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using LibVLCSharp.WPF;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using MyCinema.Core.Playback;
 using MyCinema.Infrastructure.Services;
@@ -17,7 +18,7 @@ namespace MyCinema.Tests;
 
 public sealed partial class LibraryTemplateTests
 {
-    // Called on the shared WPF STA thread so this also exercises VLC's detached overlay.
+    // Called on the shared WPF STA thread with the real VLC output and transparent native child.
     private static void VerifyNativeVideoOverlay()
     {
         using var playback = new PlaybackService(NullLogger<PlaybackService>.Instance, ["--aout=dummy"]);
@@ -38,12 +39,28 @@ public sealed partial class LibraryTemplateTests
             var native = playback.MediaPlayer!;
             var handle = native.Hwnd;
             var host = Assert.IsType<Grid>(view.FindName("VideoHost"));
-            var video = Assert.Single(host.Children.OfType<VideoView>());
+            var video = Assert.Single(host.Children.OfType<NativeVideoHost>());
             var overlay = Assert.IsType<Grid>(view.FindName("PlayerOverlay"));
-            Assert.NotSame(window, Window.GetWindow(overlay));
+            var mainHandle = new WindowInteropHelper(window).Handle;
+            var overlayHandle = Assert.IsType<HwndSource>(PresentationSource.FromVisual(overlay)).Handle;
+            Assert.True(IsChild(mainHandle, overlayHandle));
+            Assert.True(IsChild(mainHandle, handle));
+            Assert.Empty(window.OwnedWindows.Cast<Window>());
             Assert.Same(player, overlay.DataContext);
+            PumpUntil(() => overlay.RenderSize == host.RenderSize);
             var size = host.RenderSize;
             var ratio = native.AspectRatio;
+            var controls = Assert.IsType<Border>(view.FindName("PlaybackControls"));
+            var playPause = Assert.Single(Descendants(controls).OfType<Button>(), button => button.Command == player.PlayPauseCommand);
+            // Focus left on Play must not hold controls open, including in windowed playback.
+            playPause.Focus();
+            PumpUntil(() => playPause.IsKeyboardFocused);
+            clock.Advance();
+            PumpUntil(() => !player.AreControlsVisible);
+            Assert.Equal(Visibility.Collapsed, controls.Visibility);
+            Assert.Equal(Cursors.None, overlay.Cursor);
+            Assert.True(overlay.IsKeyboardFocused);
+            Assert.Equal(size, host.RenderSize);
             player.IsFullscreen = true;
             for (var cycle = 0; cycle < 3; cycle++)
             {
@@ -65,7 +82,15 @@ public sealed partial class LibraryTemplateTests
             overlay.RaiseEvent(key);
             Assert.True(key.Handled);
             Assert.False(player.AreControlsLocked);
-            // Unloading and reloading must release and reattach the owned overlay cleanly.
+            foreach (var state in new[] { WindowState.Maximized, WindowState.Normal, WindowState.Minimized, WindowState.Normal })
+            {
+                window.WindowState = state;
+                PumpUntil(() => window.WindowState == state);
+                Assert.True(IsChild(mainHandle, overlayHandle));
+                Assert.Equal(handle, native.Hwnd);
+                if (state != WindowState.Minimized) PumpUntil(() => overlay.RenderSize == host.RenderSize);
+            }
+            // Unloading and reloading must release and reattach the native child cleanly.
             window.Content = null;
             PumpUntil(() => !view.IsLoaded);
             Assert.Contains(overlay, Assert.IsType<Grid>(view.FindName("PlayerLayout")).Children.Cast<UIElement>());
@@ -80,6 +105,10 @@ public sealed partial class LibraryTemplateTests
             PumpUntil(() => !view.IsLoaded);
         }
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsChild(IntPtr parent, IntPtr child);
 
     private static void PumpUntil(Func<bool> condition)
     {

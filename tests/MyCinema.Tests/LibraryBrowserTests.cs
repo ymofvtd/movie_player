@@ -329,6 +329,15 @@ public sealed class LibraryBrowserTests : IDisposable
         await movies.PendingUpdate;
         Assert.Contains(movies.Cards, c => c.Title == "New movie" && c.IsAvailable);
         Assert.Contains("Scan complete", Shell.Settings.ScanStatus);
+        Directory.Move(root, root + "Offline");
+        await Shell.Settings.ScanCommand.ExecuteAsync(null);
+        await (Store.RefreshCommand.ExecutionTask ?? Task.CompletedTask);
+        await movies.PendingUpdate;
+        Assert.DoesNotContain(movies.Cards, c => c.Title == "New movie");
+        Assert.DoesNotContain(Shell.Settings.PreviewItems, i => i.Label.StartsWith("New movie"));
+        Assert.DoesNotContain("unavailable", Shell.Settings.LibrarySummary);
+        Assert.Contains("Scan complete", Shell.Settings.ScanStatus);
+        Assert.NotEmpty(Shell.Settings.ScanWarnings);
     }
 
     private sealed class LibraryStoreProvider : IDisposable

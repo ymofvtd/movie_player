@@ -15,6 +15,7 @@ public sealed class LibraryRepository(SqliteDatabase database) : ILibraryReposit
             var items = new List<LibraryItem>();
             var files = new List<MediaFile>();
             var progress = new List<PlaybackProgress>();
+            var scannedItemIds = new List<long>();
             using (var command = Sql.Command(connection, transaction, "SELECT * FROM LibraryItems;"))
             using (var reader = command.ExecuteReader())
                 while (reader.Read()) { cancellationToken.ThrowIfCancellationRequested(); items.Add(ReadItem(reader)); }
@@ -24,8 +25,12 @@ public sealed class LibraryRepository(SqliteDatabase database) : ILibraryReposit
             using (var command = Sql.Command(connection, transaction, "SELECT * FROM PlaybackProgress;"))
             using (var reader = command.ExecuteReader())
                 while (reader.Read()) { cancellationToken.ThrowIfCancellationRequested(); progress.Add(ProgressRepository.Read(reader)); }
+            using (var command = Sql.Command(connection, transaction,
+                "SELECT DISTINCT LibraryItemId FROM ScanSources WHERE LibraryItemId IS NOT NULL;"))
+            using (var reader = command.ExecuteReader())
+                while (reader.Read()) { cancellationToken.ThrowIfCancellationRequested(); scannedItemIds.Add(reader.GetInt64(0)); }
             transaction.Commit();
-            return new LibrarySnapshot(items, files, progress);
+            return new LibrarySnapshot(items, files, progress) { ScannedItemIds = scannedItemIds };
         }, cancellationToken);
 
     public Task<IReadOnlyList<LibraryRoot>> GetRootsAsync(CancellationToken cancellationToken = default) =>

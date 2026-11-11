@@ -103,6 +103,33 @@ public sealed class WatchHistoryTests : IDisposable
     }
 
     [Theory]
+    [InlineData(89_999, true, true, false)]
+    [InlineData(90_000, true, true, true)]
+    [InlineData(95_000, false, true, false)]
+    [InlineData(95_000, true, false, false)]
+    public async Task FranchiseCompletionUsesNinetyPercentAndTheSavedCollectionOrder(long position,
+        bool forward, bool sameFranchise, bool expected)
+    {
+        await SetupAsync();
+        var library = _services!.GetRequiredService<ILibraryRepository>();
+        var franchise = await library.SaveItemAsync(new() { Title = "Series", ItemType = LibraryItemType.Franchise });
+        var movie = (await library.GetItemAsync(_file.LibraryItemId))!;
+        await library.SaveItemAsync(movie with { ParentId = franchise.Id, SortTitle = "00000001|Z first" });
+        var otherFranchise = sameFranchise ? franchise : await library.SaveItemAsync(new()
+            { Title = "Other series", ItemType = LibraryItemType.Franchise });
+        var next = await library.SaveItemAsync(new() { Title = "A next", ItemType = LibraryItemType.Movie,
+            ParentId = otherFranchise.Id, SortTitle = forward ? "00000002|A next" : "00000000|A next" });
+        var nextFile = await library.SaveFileAsync(new() { LibraryItemId = next.Id,
+            FilePath = Path.Combine(_directory, "next.mkv") });
+        _playback.Emit(PlaybackState.Playing, _file.FilePath, position);
+        _playback.Emit(PlaybackState.Opening, nextFile.FilePath, 0, session: 2);
+        _playback.Emit(PlaybackState.Playing, nextFile.FilePath, 5_000, session: 2);
+        await History.FlushAsync();
+        Assert.Equal(expected, (await Progress.GetAsync(_file.Id))!.IsCompleted);
+        Assert.False((await Progress.GetAsync(nextFile.Id))!.IsCompleted);
+    }
+
+    [Theory]
     [InlineData(ResumeChoice.Resume, 40_000)]
     [InlineData(ResumeChoice.StartOver, 0)]
     [InlineData(ResumeChoice.Cancel, -1)]

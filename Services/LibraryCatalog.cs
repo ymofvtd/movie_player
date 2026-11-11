@@ -13,9 +13,8 @@ public sealed class LibraryCatalog
     public LibraryCatalog(LibrarySnapshot snapshot)
     {
         var allItems = snapshot.Items.ToDictionary(i => i.Id);
-        // An unavailable scanned file was confirmed missing by an authoritative enumeration.
-        // Keep its database identity/history, but remove it from every browsing index.
-        // Offline roots and unreadable subtrees retain their previous scan availability.
+        // Files not found in the last scan, including offline/unreadable paths, leave
+        // every browsing index. Their database identities and history remain private.
         var missingFiles = snapshot.Files.Where(f => f.LibraryRootId.HasValue && !f.IsAvailable).ToArray();
         var files = snapshot.Files.Where(f => !f.LibraryRootId.HasValue || f.IsAvailable).ToArray();
         var affected = new HashSet<long>();
@@ -25,6 +24,9 @@ public sealed class LibraryCatalog
             while (ids.Add(id) && allItems.TryGetValue(id, out var item) && item.ParentId is { } parent)
                 id = parent;
         }
+        // Scanner-created containers can have no files at all (for example, an empty
+        // season folder). They must also disappear unless discovered media retains them.
+        foreach (var id in snapshot.ScannedItemIds) AddAncestors(affected, id);
         foreach (var file in missingFiles) AddAncestors(affected, file.LibraryItemId);
         foreach (var file in files) AddAncestors(retained, file.LibraryItemId);
         // Preserve unrelated empty/manual groups and containers with any surviving children.
