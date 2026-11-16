@@ -173,7 +173,7 @@ The original app project remains at the repository root to preserve the existing
 
 One shared playback service serializes open, play, and stop operations off the UI thread. Native callbacks publish immutable state, and the player ViewModel dispatches updates onto WPF's UI thread. The application waits for playback operations to finish and stops VLC before disposing the window and service container.
 
-The video host stays alive during page navigation and fullscreen transitions. A native child hosts VLC video beside a transparent WPF child for mouse input, playback controls, and the episode panel. Both belong to the main window's native child tree, so minimize, maximize, restore, and movement share Windows' window animation. The native viewport has its own fixed layout, so showing, hiding, locking, or expanding the overlay never changes the video dimensions.
+The video host stays alive during page navigation and fullscreen transitions. A native child hosts VLC video beside a transparent WPF child for mouse input, playback controls, and the episode panel. Both belong to the main window's native child tree, so minimize, maximize, restore, and movement share Windows' window animation. The native viewport has its own fixed layout, so showing, hiding, locking, or expanding the overlay never changes the video dimensions. Its background uses a fixed black brush and repaints on resize, keeping letterbox areas black regardless of Windows theme colors.
 
 ## Local data
 

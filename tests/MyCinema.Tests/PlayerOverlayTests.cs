@@ -34,6 +34,8 @@ public sealed partial class LibraryTemplateTests
         {
             window.Show();
             PumpUntil(() => playback.MediaPlayer!.Hwnd != IntPtr.Zero);
+            AssertPaintsBlack(playback.MediaPlayer!.Hwnd);
+            AssertPaintsBlack(GetParent(playback.MediaPlayer.Hwnd));
             playback.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv")).GetAwaiter().GetResult();
             PumpUntil(() => player.IsPlaying);
             var native = playback.MediaPlayer!;
@@ -88,7 +90,12 @@ public sealed partial class LibraryTemplateTests
                 PumpUntil(() => window.WindowState == state);
                 Assert.True(IsChild(mainHandle, overlayHandle));
                 Assert.Equal(handle, native.Hwnd);
-                if (state != WindowState.Minimized) PumpUntil(() => overlay.RenderSize == host.RenderSize);
+                if (state != WindowState.Minimized)
+                {
+                    PumpUntil(() => overlay.RenderSize == host.RenderSize);
+                    AssertPaintsBlack(handle);
+                    AssertPaintsBlack(GetParent(handle));
+                }
             }
             // Unloading and reloading must release and reattach the native child cleanly.
             window.Content = null;
@@ -109,6 +116,55 @@ public sealed partial class LibraryTemplateTests
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsChild(IntPtr parent, IntPtr child);
+
+    // Exercise the native background paint, which WPF RenderTargetBitmap cannot capture.
+    // Letterbox areas must stay black even when Windows uses a gray window-frame color.
+    private static void AssertPaintsBlack(IntPtr window)
+    {
+        var screen = GetDC(IntPtr.Zero);
+        var memory = CreateCompatibleDC(screen);
+        var bitmap = CreateCompatibleBitmap(screen, 1, 1);
+        var previous = SelectObject(memory, bitmap);
+        try
+        {
+            Assert.True(SetPixelV(memory, 0, 0, 0x00FF00FF));
+            SendMessage(window, 0x0014, memory, IntPtr.Zero); // WM_ERASEBKGND
+            Assert.Equal(0u, GetPixel(memory, 0, 0));
+        }
+        finally
+        {
+            SelectObject(memory, previous);
+            DeleteObject(bitmap);
+            DeleteDC(memory);
+            ReleaseDC(IntPtr.Zero, screen);
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr deviceContext);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr deviceContext);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleBitmap(IntPtr deviceContext, int width, int height);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr deviceContext, IntPtr value);
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetPixelV(IntPtr deviceContext, int x, int y, uint color);
+    [DllImport("gdi32.dll")]
+    private static extern uint GetPixel(IntPtr deviceContext, int x, int y);
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr value);
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteDC(IntPtr deviceContext);
 
     private static void PumpUntil(Func<bool> condition)
     {
