@@ -44,6 +44,15 @@ public sealed class ScannerTests : IDisposable
     [InlineData("Show.S01E01-E02.mkv", null, 1, 1, 2, null)]
     [InlineData("Show.S01E01E02.mkv", null, 1, 1, 2, null)]
     [InlineData("E04.Pilot.mp4", 3, 3, 4, null, "Pilot")]
+    [InlineData("Big Mouth - episode 1.mp4", 1, 1, 1, null, null)]
+    [InlineData("Big Mouth - episode 1.mp4", null, 1, 1, null, null)]
+    [InlineData("Big Mouth - EPISODE 10 - Finale.mp4", 2, 2, 10, null, "Finale")]
+    [InlineData("Big.Mouth.Ep.04.Pilot.1080p.mkv", null, 1, 4, null, "Pilot")]
+    [InlineData("Big_Mouth_episode_001.mp4", 0, 0, 1, null, null)]
+    [InlineData("Big Mouth - Episode1.mp4", null, 1, 1, null, null)]
+    [InlineData("Big Mouth - Episode 1-Episode 2.mp4", null, 1, 1, 2, null)]
+    [InlineData("Big Mouth - Ep01-E02 - Premiere.mp4", 3, 3, 1, 2, "Premiere")]
+    [InlineData("Big Mouth - Episode 1 - S02E03.mp4", 1, 2, 3, null, null)]
     public void ParsesEpisodeNumbersAndRanges(string name, int? knownSeason, int season, int number, int? end, string? title)
     {
         var parsed = Assert.IsType<ParsedEpisode>(MediaNameParser.Episode(name, knownSeason));
@@ -59,6 +68,91 @@ public sealed class ScannerTests : IDisposable
         Assert.Equal(new("Gifted", 2017, null), MediaNameParser.Clean("Gifted (2017) [2160p]"));
         Assert.Equal("Director's Cut", MediaNameParser.Clean("Movie.Directors.Cut.mkv").Edition);
         Assert.Equal("Remastered", MediaNameParser.Clean("Movie.Remastered.mkv").Edition);
+    }
+
+    [Theory]
+    [InlineData("Big Mouth 1.mp4")]
+    [InlineData("Big Mouth - Episode.mp4")]
+    [InlineData("Big Mouth - SomeEpisode 1.mp4")]
+    [InlineData("Big Mouth - Episode 12345.mp4")]
+    public void DoesNotGuessEpisodesFromUnmarkedOrInvalidNumbers(string name)
+    {
+        Assert.Null(MediaNameParser.Episode(name));
+        Assert.Null(MediaNameParser.Episode(name, 1));
+    }
+
+    [Theory]
+    [InlineData("Big Mouth", 1)]
+    [InlineData(@"Big Mouth\Season 1", 1)]
+    [InlineData(@"Big Mouth\Season 2", 2)]
+    public void ClassifiesNamedEpisodesWithOrWithoutSeasonFolders(string folder, int seasonNumber)
+    {
+        foreach (var number in new[] { 10, 2, 1 })
+            Video(Path.Combine(folder, $"Big Mouth - episode {number}.mp4"));
+
+        var scan = new FolderScanner().Read(MediaRoot);
+
+        Assert.Empty(scan.Warnings);
+        var show = Assert.Single(scan.Items, i => i.Item.ItemType == LibraryItemType.Show);
+        Assert.Equal("Big Mouth", show.Item.Title);
+        var season = Assert.Single(scan.Items, i => i.ParentKey == show.SourceKey);
+        Assert.Equal(LibraryItemType.Season, season.Item.ItemType);
+        Assert.Equal(seasonNumber, season.Item.SeasonNumber);
+        var episodes = scan.Items.Where(i => i.ParentKey == season.SourceKey).ToArray();
+        Assert.Equal(new[] { 1, 2, 10 }, episodes.Select(i => i.Item.EpisodeNumber!.Value));
+        Assert.All(episodes, i =>
+        {
+            Assert.Equal(LibraryItemType.Episode, i.Item.ItemType);
+            Assert.Equal(seasonNumber, i.Item.SeasonNumber);
+        });
+        Assert.Equal(new[] { "Episode 01", "Episode 02", "Episode 10" }, episodes.Select(i => i.Item.Title));
+        Assert.Equal(3, scan.Files.Count);
+        Assert.All(scan.Files, f => Assert.True(File.Exists(f.Path)));
+    }
+
+    [Fact]
+    public async Task RescanRecognizesPreviouslyUncategorizedNamedEpisodesWithoutLosingProgress()
+    {
+        var path = Video(@"Big Mouth\Big Mouth - episode 1.mp4");
+        Video(@"Big Mouth\Big Mouth - episode 2.mp4");
+        var detected = new FolderScanner().Read(MediaRoot);
+        // The earlier parser left a flat folder of named episodes in Uncategorized.
+        var previous = detected with
+        {
+            Items = detected.Items.Where(i => detected.Files.Any(f => f.ItemKey == i.SourceKey))
+                .Select(i => i with
+                {
+                    ParentKey = null,
+                    Item = i.Item with
+                    {
+                        ItemType = LibraryItemType.Uncategorized, SeasonNumber = null,
+                        EpisodeNumber = null, EpisodeEndNumber = null
+                    }
+                }).ToArray()
+        };
+        using var services = Services();
+        var library = services.GetRequiredService<ILibraryRepository>();
+        var root = await library.SaveRootAsync(new LibraryRoot { Path = MediaRoot });
+        await services.GetRequiredService<IScanRepository>().CommitAsync(root.Id, previous);
+        var file = (await library.FindFileAsync(path))!;
+        var progressRepository = services.GetRequiredService<IProgressRepository>();
+        var progress = await progressRepository.SaveAsync(new PlaybackProgress
+            { MediaFileId = file.Id, PositionMs = 45_000, DurationMs = 100_000 });
+
+        var scanner = services.GetRequiredService<ILibraryScannerService>();
+        await scanner.ScanAsync();
+        await scanner.ScanAsync();
+
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        var show = Assert.Single(catalog.Items.Values, i => i.ItemType == LibraryItemType.Show);
+        var season = Assert.Single(catalog.Children(show.Id));
+        Assert.Equal(new[] { 1, 2 }, catalog.Children(season.Id).Select(i => i.EpisodeNumber!.Value));
+        Assert.DoesNotContain(catalog.Items.Values, i => i.ItemType == LibraryItemType.Uncategorized);
+        var updated = (await library.FindFileAsync(path))!;
+        Assert.Equal(file.Id, updated.Id);
+        Assert.Equal(file.LibraryItemId, updated.LibraryItemId);
+        Assert.Equal(progress, await progressRepository.GetAsync(updated.Id));
+        Assert.Equal(2, (await library.GetAllFilesAsync()).Count);
     }
 
     [Fact]

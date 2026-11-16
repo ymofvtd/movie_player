@@ -17,9 +17,11 @@ public static partial class MediaNameParser
     {
         name = WithoutExtension(name);
         var match = EpisodePattern().Match(name);
+        if (!match.Success) match = NamedEpisodePattern().Match(name);
         if (!match.Success && knownSeason.HasValue) match = ShortEpisodePattern().Match(name);
         if (!match.Success) return null;
-        var season = match.Groups["s"].Success ? int.Parse(match.Groups["s"].Value) : knownSeason!.Value;
+        // Named episodes in a flat show folder also cover limited series without season folders.
+        var season = match.Groups["s"].Success ? int.Parse(match.Groups["s"].Value) : knownSeason ?? 1;
         var episode = int.Parse(match.Groups["e"].Value);
         int? end = match.Groups["end"].Success ? int.Parse(match.Groups["end"].Value) : null;
         if (end <= episode) end = null;
@@ -66,6 +68,8 @@ public static partial class MediaNameParser
     private static partial Regex SeasonPattern();
     [GeneratedRegex(@"(?<![a-z0-9])(?:S(?<s>\d{1,3})[ ._-]*E(?<e>\d{1,4})(?:[ ._-]*E(?<end>\d{1,4}))?|(?<s>\d{1,3})x(?<e>\d{1,4})(?:-?(?:E|x)?(?<end>\d{1,4}))?)(?!\d)", RegexOptions.IgnoreCase)]
     private static partial Regex EpisodePattern();
+    [GeneratedRegex(@"(?<![a-z0-9])Ep(?:isode)?[ ._-]*(?<e>\d{1,4})(?:[ ._-]*E(?:p(?:isode)?)?[ ._-]*(?<end>\d{1,4}))?(?!\d)", RegexOptions.IgnoreCase)]
+    private static partial Regex NamedEpisodePattern();
     [GeneratedRegex(@"(?<![a-z0-9])E(?<e>\d{1,4})(?:[ ._-]*E(?<end>\d{1,4}))?(?!\d)", RegexOptions.IgnoreCase)]
     private static partial Regex ShortEpisodePattern();
     [GeneratedRegex(@"\b(?:18|19|20)\d{2}\b")]

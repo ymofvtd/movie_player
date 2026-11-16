@@ -57,6 +57,7 @@ Detection supports:
 
 - Movie folders, release years, common technical-tag cleanup, and edition labels such as Extended Edition, Director's Cut, Theatrical Cut, and Remastered.
 - Season folders named `Season 01`, `Season 001`, `S01`, or `Series 1`; episode names such as `S01E02`, `1x02`, and `E02` inside a known season.
+- Named episodes such as `Big Mouth - episode 1.mp4` or `Big Mouth - Ep01.mp4`, with or without a season folder. Limited series can keep episodes directly in their show folder; they are grouped under Season 01 automatically. Explicit season numbers in filenames take priority, followed by season folders.
 - Multi-episode files such as `S01E01-E02`, saved as one file and one episode item with an explicit episode range.
 - Franchise candidates containing multiple movie folders. Shows within mixed collections remain independent shows. Numeric folder prefixes are retained for sorting while being removed from display titles.
 - Sample, trailer, and extras exclusions; matching alternate cuts and numbered parts share a movie item. Ambiguous videos go to Uncategorized with a warning.
