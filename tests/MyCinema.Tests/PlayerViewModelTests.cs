@@ -80,6 +80,36 @@ public sealed class PlayerViewModelTests
         new(playback, new FakeDialogs(null), new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher());
 
     [Fact]
+    public async Task ReloadKeepsTheCurrentSessionAndBlocksConflictingCommands()
+    {
+        var playback = new FakePlayback { ReloadGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+        using var player = CreatePlayer(playback);
+        Assert.False(player.ReloadCommand.CanExecute(null));
+        playback.Emit(new(PlaybackState.Opening, "film.mp4", Revision: 1));
+        Assert.False(player.ReloadCommand.CanExecute(null));
+        var saved = new PlaybackSnapshot(PlaybackState.Paused, "film.mp4", 35_000, 100_000, true, Revision: 2);
+        playback.Emit(saved);
+        player.IsFullscreen = true;
+        var reload = player.ReloadCommand.ExecuteAsync(null);
+        Assert.Equal(saved, playback.ReloadedSnapshot);
+        Assert.False(player.ReloadCommand.CanExecute(null));
+        Assert.False(player.OpenFileCommand.CanExecute(null));
+        Assert.False(player.PlayPauseCommand.CanExecute(null));
+        Assert.False(player.StopCommand.CanExecute(null));
+        Assert.False(player.CanSeek);
+        Assert.Null(playback.OpenedPath);
+        Assert.True(player.IsFullscreen);
+        Assert.Equal(35_000, player.SeekPositionMs);
+        playback.ReloadGate.SetResult();
+        await reload;
+        Assert.True(player.ReloadCommand.CanExecute(null));
+        Assert.True(player.PlayPauseCommand.CanExecute(null));
+        Assert.True(player.CanSeek);
+        playback.Emit(saved with { State = PlaybackState.Error, Revision = 3 });
+        Assert.True(player.ReloadCommand.CanExecute(null));
+    }
+
+    [Fact]
     public void FrameCommandsRequirePausedSeekableVideoAndKeepItPaused()
     {
         var playback = new FakePlayback();
@@ -363,6 +393,8 @@ public sealed class PlayerViewModelTests
         public int? SelectedSubtitle { get; private set; }
         public double? Speed { get; private set; }
         public VideoAspectRatio? AspectRatio { get; private set; }
+        public PlaybackSnapshot? ReloadedSnapshot { get; private set; }
+        public TaskCompletionSource? ReloadGate { get; init; }
         public void Emit(PlaybackSnapshot snapshot) { Current = snapshot; Changed?.Invoke(this, new(snapshot)); }
         public Task InitializeAsync() { Initialized = true; return Task.CompletedTask; }
         public Task OpenAsync(string path, long startPositionMs = 0) { OpenedPath = path; return Task.CompletedTask; }
@@ -373,6 +405,7 @@ public sealed class PlayerViewModelTests
         public void DismissError() { }
         public Task LoadSubtitleAsync(string path) => Task.CompletedTask;
         public Task PlayAsync() => Task.CompletedTask;
+        public Task ReloadAsync() { ReloadedSnapshot = Current; return ReloadGate?.Task ?? Task.CompletedTask; }
         public void Pause() => Paused = true;
         public Task StopAsync() => Task.CompletedTask;
         public void Seek(long positionMs) => LastSeek = positionMs;

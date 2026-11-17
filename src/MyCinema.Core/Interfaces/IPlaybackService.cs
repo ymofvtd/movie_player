@@ -9,6 +9,7 @@ public interface IPlaybackService : IDisposable
     Task InitializeAsync();
     Task OpenAsync(string filePath, long startPositionMs = 0);
     Task PlayAsync();
+    Task ReloadAsync();
     void Pause();
     Task StopAsync();
     void Seek(long positionMs);

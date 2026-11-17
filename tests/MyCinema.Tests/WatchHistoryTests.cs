@@ -207,6 +207,7 @@ public sealed class WatchHistoryTests : IDisposable
         }
         public void Pause() { if (Current.State == PlaybackState.Playing) Emit(PlaybackState.Paused, Current.FilePath!, Current.PositionMs, Current.SessionId); }
         public Task PlayAsync() => Task.CompletedTask;
+        public Task ReloadAsync() => Task.CompletedTask;
         public Task StopAsync() => Task.CompletedTask;
         public void Seek(long positionMs) { }
         public void SetVolume(int volume) { }

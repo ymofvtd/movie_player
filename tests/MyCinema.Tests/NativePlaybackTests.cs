@@ -107,6 +107,122 @@ public sealed class NativePlaybackTests : IDisposable
         return playback;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReloadRebuildsMediaWithoutResettingPositionPauseOrPlaybackOptions(bool paused)
+    {
+        using var playback = CreatePlayback();
+        await playback.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv"));
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.CanSeek &&
+            playback.Current.AudioTracks.Count == 2 && playback.Current.SubtitleTracks.Count == 2);
+        playback.Pause();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Paused);
+        playback.Seek(8000);
+        await WaitUntil(() => Math.Abs(playback.MediaPlayer!.Time - 8000) < 200);
+        var english = Assert.Single(playback.Current.AudioTracks, t => t.Language == "eng");
+        await playback.SetAudioTrackAsync(english.Id);
+        await playback.SetSubtitleTrackAsync(-1);
+        await playback.SetSpeedAsync(1.5);
+        await playback.SetAspectRatioAsync(VideoAspectRatio.Wide16By9);
+        playback.SetVolume(35);
+        playback.SetMute(true);
+        if (!paused)
+        {
+            await playback.PlayAsync();
+            await WaitUntil(() => playback.Current.State == PlaybackState.Playing);
+        }
+        var native = playback.MediaPlayer!;
+        var session = playback.Current.SessionId;
+        using var previousMedia = native.Media!;
+        var snapshots = new System.Collections.Concurrent.ConcurrentQueue<PlaybackSnapshot>();
+        playback.Changed += (_, args) => snapshots.Enqueue(args.Snapshot);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var savedPosition = playback.Current.PositionMs;
+            await playback.ReloadAsync();
+            await WaitUntil(() => playback.Current.State == (paused ? PlaybackState.Paused : PlaybackState.Playing) &&
+                playback.Current.CanSeek && native.AudioTrack == english.Id && native.Spu == -1 &&
+                native.Time >= savedPosition - 200, () => playback.Current + " Native time: " + native.Time);
+            using var reloadedMedia = native.Media!;
+            Assert.NotEqual(previousMedia.NativeReference, reloadedMedia.NativeReference);
+            Assert.Same(native, playback.MediaPlayer);
+            Assert.Equal(session, playback.Current.SessionId);
+            Assert.InRange(native.Time, savedPosition - 200, savedPosition + 3500);
+            Assert.Equal(35, playback.Current.Volume);
+            Assert.True(playback.Current.IsMuted);
+            Assert.InRange(native.Rate, 1.49f, 1.51f);
+            Assert.Equal("16:9", native.AspectRatio);
+            Assert.Null(playback.Current.ErrorMessage);
+        }
+        Assert.DoesNotContain(snapshots, s => s.PositionMs < 7800 || s.State == PlaybackState.Stopped);
+        await playback.StopAsync();
+        await playback.PlayAsync();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && native.Time > 0);
+        Assert.InRange(native.Time, 0, 3000);
+    }
+
+    [Fact]
+    public async Task ReloadRetainsExternalSubtitlesAndCanKeepThemTurnedOff()
+    {
+        using var playback = CreatePlayback();
+        await playback.ReloadAsync();
+        Assert.Equal(PlaybackState.Empty, playback.Current.State);
+        await playback.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv"));
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.CanSeek &&
+            playback.Current.SubtitleTracks.Count == 2);
+        Directory.CreateDirectory(_directory);
+        var external = Path.Combine(_directory, "reload.srt");
+        await File.WriteAllTextAsync(external, "1\n00:00:00,000 --> 00:00:19,000\nReload subtitle test\n");
+        await playback.LoadSubtitleAsync(external);
+        await WaitUntil(() => playback.Current.SubtitleTracks.Count == 3 && playback.Current.SubtitleTrackId >= 0);
+        var selected = playback.Current.SubtitleTrackId;
+        playback.Pause();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Paused);
+        playback.Seek(5000);
+        foreach (var trackId in new[] { selected, -1 })
+        {
+            await playback.SetSubtitleTrackAsync(trackId);
+            await playback.ReloadAsync();
+            await WaitUntil(() => playback.Current.State == PlaybackState.Paused && playback.Current.SubtitleTracks.Count == 3 &&
+                playback.MediaPlayer!.Spu == trackId && Math.Abs(playback.MediaPlayer.Time - 5000) < 200,
+                () => playback.Current.ToString());
+            Assert.Null(playback.Current.ErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task FailedReloadKeepsTheResumePointAndDoesNotMarkTheVideoCompleted()
+    {
+        var path = WriteWave();
+        using var playback = CreatePlayback();
+        await playback.OpenAsync(path);
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.CanSeek && playback.Current.DurationMs > 0);
+        playback.Pause();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Paused);
+        playback.Seek(5000);
+        await WaitUntil(() => Math.Abs(playback.MediaPlayer!.Time - 5000) < 200);
+        // Simulate a failed native input while retaining the last published resume point.
+        await playback.PlayAsync();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing);
+        await Task.Run(() => playback.MediaPlayer!.Stop());
+        var resumePosition = playback.Current.PositionMs;
+        File.WriteAllText(path, "This media is no longer readable by VLC.");
+        await playback.ReloadAsync();
+        await WaitUntil(() => playback.Current.State is PlaybackState.Error or PlaybackState.Ended, () => playback.Current.ToString());
+        Assert.Equal(PlaybackState.Error, playback.Current.State);
+        Assert.Equal(resumePosition, playback.Current.PositionMs);
+        File.Delete(path);
+        await playback.ReloadAsync();
+        Assert.Contains("unavailable", playback.Current.ErrorMessage);
+        Assert.Equal(resumePosition, playback.Current.PositionMs);
+        WriteWave();
+        await playback.ReloadAsync();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer!.Time >= 4900);
+        Assert.InRange(playback.Current.PositionMs, 4900, 7500);
+        Assert.Null(playback.Current.ErrorMessage);
+    }
+
     [Fact]
     public async Task RepeatedVideoSwitchesAndEngineRestartsReleaseEveryMediaFile()
     {
@@ -376,6 +492,14 @@ public sealed class NativePlaybackTests : IDisposable
             player.Playback.Seek(8000);
             await WaitUntil(() => Math.Abs(((PlaybackService)player.Playback).MediaPlayer!.Time - 8000) < 200);
             await player.FlushProgressAsync();
+            await player.ReloadCommand.ExecuteAsync(null);
+            var native = ((PlaybackService)player.Playback).MediaPlayer!;
+            await WaitUntil(() => player.Playback.Current.State == PlaybackState.Paused && native.Time >= 7800);
+            await player.FlushProgressAsync();
+            var saved = await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id);
+            Assert.InRange(saved!.PositionMs, 7800, 8200);
+            Assert.False(saved.IsCompleted);
+            Assert.Equal(0, dialogs.Prompts);
             await player.Playback.StopAsync();
             await player.FlushProgressAsync();
         }

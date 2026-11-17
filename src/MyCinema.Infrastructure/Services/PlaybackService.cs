@@ -19,6 +19,10 @@ public sealed class PlaybackService : IPlaybackService
     private string? _lastNativeError;
     private volatile bool _acceptEvents;
     private volatile bool _disposed;
+    private long _reloadPositionMs = -1;
+    private PlaybackSnapshot? _reloadTracks;
+    private volatile bool _reloadAwaitingMetadata;
+    private readonly List<string> _externalSubtitles = [];
 
     public PlaybackService(ILogger<PlaybackService> logger) : this(logger, []) { }
 
@@ -71,6 +75,10 @@ public sealed class PlaybackService : IPlaybackService
             var fullPath = Path.GetFullPath(filePath);
             _acceptEvents = false;
             MediaPlayer.Stop(); // Never called from a native callback. Stop joins the old session's callbacks.
+            Interlocked.Exchange(ref _reloadPositionMs, -1);
+            _reloadTracks = null;
+            _reloadAwaitingMetadata = false;
+            _externalSubtitles.Clear();
             Volatile.Write(ref _lastNativeError, null);
             Update(state => state with
             {
@@ -99,6 +107,9 @@ public sealed class PlaybackService : IPlaybackService
         {
             using var media = MediaPlayer.Media;
             media?.AddOption(":start-time=0");
+            media?.AddOption(":no-start-paused");
+            Interlocked.Exchange(ref _reloadPositionMs, -1);
+            _reloadTracks = null;
         }
         if (Current.State is PlaybackState.Ended or PlaybackState.Error)
         {
@@ -112,6 +123,43 @@ public sealed class PlaybackService : IPlaybackService
         ApplyAudio();
     }, "Playback could not start.");
 
+    public Task ReloadAsync() => ExecuteAsync(() =>
+    {
+        var saved = Current;
+        if (MediaPlayer is null || _engine is null || !saved.HasMedia || saved.State == PlaybackState.Opening) return;
+        if (!File.Exists(saved.FilePath))
+        {
+            ReportError("The video is unavailable. Reconnect its drive, then reload again.", preservePlayback: true,
+                details: saved.FilePath);
+            return;
+        }
+
+        _acceptEvents = false;
+        // Stop tears down VLC's decoder and video output before a fresh media input is created.
+        // Do not publish Stopped or a zero clock: this is still the same watch-history session.
+        MediaPlayer.Stop();
+        var position = PlaybackMath.ClampPosition(saved.PositionMs, saved.DurationMs);
+        Interlocked.Exchange(ref _reloadPositionMs, position);
+        _reloadTracks = saved;
+        _reloadAwaitingMetadata = true;
+        Volatile.Write(ref _lastNativeError, null);
+        Update(s => s with { State = PlaybackState.Opening, PositionMs = position, CanSeek = false,
+            ErrorMessage = null, ErrorDetails = null });
+        using var media = new Media(_engine, saved.FilePath!, FromType.FromPath);
+        media.AddOption(":start-time=" + (position / 1000d).ToString("0.###", CultureInfo.InvariantCulture));
+        if (saved.State == PlaybackState.Paused) media.AddOption(":start-paused");
+        foreach (var path in _externalSubtitles.Where(File.Exists))
+            media.AddSlave(MediaSlaveType.Subtitle, 4, new Uri(path).AbsoluteUri);
+        _acceptEvents = true;
+        if (!MediaPlayer.Play(media))
+        {
+            ReportError("The player could not reload this video. Your playback position has been kept; try Reload again.");
+            return;
+        }
+        ApplyAudio();
+        _logger.LogInformation("Reloaded local media {FilePath} at {PositionMs} ms", saved.FilePath, position);
+    }, "The player could not reload. Your playback position has been kept; try Reload again.");
+
     public void Pause()
     {
         if (!_disposed && Current.State is PlaybackState.Playing or PlaybackState.Opening) MediaPlayer?.SetPause(true);
@@ -122,6 +170,8 @@ public sealed class PlaybackService : IPlaybackService
         if (MediaPlayer is null) return;
         _acceptEvents = false;
         MediaPlayer.Stop();
+        Interlocked.Exchange(ref _reloadPositionMs, -1);
+        _reloadTracks = null;
         Update(state => state with
         {
             State = state.HasMedia ? PlaybackState.Stopped : PlaybackState.Empty,
@@ -134,6 +184,7 @@ public sealed class PlaybackService : IPlaybackService
         var state = Current;
         if (_disposed || MediaPlayer is null || !state.CanSeek || state.DurationMs <= 0) return;
         var position = PlaybackMath.ClampPosition(positionMs, state.DurationMs);
+        Interlocked.Exchange(ref _reloadPositionMs, -1);
         MediaPlayer.Time = position;
         Update(current => current with { PositionMs = position });
     }
@@ -189,6 +240,7 @@ public sealed class PlaybackService : IPlaybackService
     public Task SetAudioTrackAsync(int trackId) => ExecuteAsync(() =>
     {
         if (!CanSelectTracks || !Current.AudioTracks.Any(t => t.Id == trackId)) return;
+        _reloadTracks = null;
         if (!MediaPlayer!.SetAudioTrack(trackId))
             ReportError("This audio track could not be selected. Try another track.", preservePlayback: true);
         else Update(s => s with { AudioTrackId = trackId, ErrorMessage = null });
@@ -198,6 +250,7 @@ public sealed class PlaybackService : IPlaybackService
     public Task SetSubtitleTrackAsync(int trackId) => ExecuteAsync(() =>
     {
         if (!CanSelectTracks || !Current.SubtitleTracks.Any(t => t.Id == trackId)) return;
+        _reloadTracks = null;
         if (!MediaPlayer!.SetSpu(trackId))
             ReportError("This subtitle track could not be selected. Try another track.", preservePlayback: true);
         else Update(s => s with { SubtitleTrackId = trackId, ErrorMessage = null });
@@ -214,7 +267,12 @@ public sealed class PlaybackService : IPlaybackService
         }
         if (!MediaPlayer!.AddSlave(MediaSlaveType.Subtitle, new Uri(Path.GetFullPath(filePath)).AbsoluteUri, true))
             ReportError("VLC could not load this subtitle file. Try an SRT, ASS, SSA, or VTT file.", preservePlayback: true);
-        else Update(s => s with { ErrorMessage = null });
+        else
+        {
+            var fullPath = Path.GetFullPath(filePath);
+            if (!_externalSubtitles.Contains(fullPath, StringComparer.OrdinalIgnoreCase)) _externalSubtitles.Add(fullPath);
+            Update(s => s with { ErrorMessage = null });
+        }
         RefreshTracks();
     }, "The subtitle file could not be loaded.", preservePlayback: true);
 
@@ -244,6 +302,15 @@ public sealed class PlaybackService : IPlaybackService
         var audio = MediaPlayer.AudioTrackDescription.Where(t => t.Id >= 0).Select(t => Describe(t, TrackType.Audio)).ToArray();
         var subtitles = new[] { new PlaybackTrack(-1, "Off") }.Concat(MediaPlayer.SpuDescription
             .Where(t => t.Id >= 0).Select(t => Describe(t, TrackType.Text))).ToArray();
+        if (_reloadTracks is { } saved)
+        {
+            if (audio.Any(t => t.Id == saved.AudioTrackId) && MediaPlayer.AudioTrack != saved.AudioTrackId)
+                MediaPlayer.SetAudioTrack(saved.AudioTrackId);
+            if (subtitles.Any(t => t.Id == saved.SubtitleTrackId) && MediaPlayer.Spu != saved.SubtitleTrackId)
+                MediaPlayer.SetSpu(saved.SubtitleTrackId);
+            if (MediaPlayer.AudioTrack == saved.AudioTrackId && MediaPlayer.Spu == saved.SubtitleTrackId)
+                _reloadTracks = null;
+        }
         var current = Current;
         if (current.AudioTracks.SequenceEqual(audio) && current.SubtitleTracks.SequenceEqual(subtitles) &&
             current.AudioTrackId == MediaPlayer.AudioTrack && current.SubtitleTrackId == MediaPlayer.Spu &&
@@ -324,6 +391,9 @@ public sealed class PlaybackService : IPlaybackService
             await ExecuteAsync(() =>
             {
                 if (!CanSelectTracks) return;
+                var resumePosition = Interlocked.Read(ref _reloadPositionMs);
+                // A start-paused input has not consumed start-time yet. Seek its decoded picture explicitly.
+                if (resumePosition >= 0 && Current.CanSeek) MediaPlayer!.Time = resumePosition;
                 ApplyAudio();
                 ApplyAspectRatio(Current.AspectRatio);
                 if (MediaPlayer!.SetRate((float)Current.Speed) != 0)
@@ -342,11 +412,16 @@ public sealed class PlaybackService : IPlaybackService
         if (e.Level == LibVLCSharp.Shared.LogLevel.Error)
             Volatile.Write(ref _lastNativeError, $"{e.Module}: {e.Message}");
     }
-    private void OnPaused(object? sender, EventArgs e) { if (_acceptEvents) Update(s => s with { State = PlaybackState.Paused }); }
+    private void OnPaused(object? sender, EventArgs e)
+    {
+        if (!_acceptEvents) return;
+        Update(s => s with { State = PlaybackState.Paused });
+        OnOutputReady(sender, e);
+    }
     private void OnEnded(object? sender, EventArgs e)
     {
         if (!_acceptEvents) return;
-        if (Current.DurationMs <= 0)
+        if (_reloadAwaitingMetadata || Current.DurationMs <= 0)
         {
             ReportError("No playable audio or video was found in this file.");
             return;
@@ -359,15 +434,24 @@ public sealed class PlaybackService : IPlaybackService
     }
     private void OnTimeChanged(object? sender, MediaPlayerTimeChangedEventArgs e)
     {
-        if (_acceptEvents) Update(s => s with { PositionMs = PlaybackMath.ClampPosition(e.Time, s.DurationMs) });
+        if (!_acceptEvents) return;
+        // VLC may briefly report zero while rebuilding the input. Keep the resume point until it catches up.
+        var resumePosition = Interlocked.Read(ref _reloadPositionMs);
+        if (resumePosition >= 0 && e.Time < resumePosition) return;
+        Interlocked.Exchange(ref _reloadPositionMs, -1);
+        Update(s => s with { PositionMs = PlaybackMath.ClampPosition(e.Time, s.DurationMs) });
     }
     private void OnLengthChanged(object? sender, MediaPlayerLengthChangedEventArgs e)
     {
-        if (_acceptEvents) Update(s => s with { DurationMs = Math.Max(0, e.Length) });
+        if (!_acceptEvents) return;
+        if (e.Length > 0) _reloadAwaitingMetadata = false;
+        Update(s => s with { DurationMs = Math.Max(0, e.Length) });
     }
     private void OnSeekableChanged(object? sender, MediaPlayerSeekableChangedEventArgs e)
     {
-        if (_acceptEvents) Update(s => s with { CanSeek = e.Seekable != 0 });
+        if (!_acceptEvents) return;
+        Update(s => s with { CanSeek = e.Seekable != 0 });
+        if (e.Seekable != 0 && Interlocked.Read(ref _reloadPositionMs) >= 0) OnOutputReady(sender, e);
     }
     private void Subscribe(MediaPlayer player)
     {

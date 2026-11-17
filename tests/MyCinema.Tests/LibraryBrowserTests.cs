@@ -395,6 +395,7 @@ public sealed class LibraryBrowserTests : IDisposable
         public void DismissError() { }
         public Task LoadSubtitleAsync(string path) => Task.CompletedTask;
         public Task PlayAsync() => Task.CompletedTask;
+        public Task ReloadAsync() => Task.CompletedTask;
         public void Pause() { }
         public Task StopAsync() => Task.CompletedTask;
         public void Seek(long positionMs) { }

@@ -60,6 +60,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PreviousEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(-1), () => CanMoveEpisode(-1));
         NextEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1), () => CanMoveEpisode(1));
         NextUpCommand = new AsyncRelayCommand(PlayNextUpAsync, () => CanPlayNextUp);
+        ReloadCommand = new AsyncRelayCommand(ReloadAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
         SkipIntroCommand = new RelayCommand(() => Skip(ActiveOpening), () => ShowSkipIntro);
         SkipCreditsCommand = new RelayCommand(() => Skip(ActiveOutro), () => ShowSkipCredits);
         OpenFileCommand.PropertyChanged += OnOpenCommandChanged;
@@ -69,6 +70,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PreviousEpisodeCommand.PropertyChanged += OnOpenCommandChanged;
         NextEpisodeCommand.PropertyChanged += OnOpenCommandChanged;
         NextUpCommand.PropertyChanged += OnOpenCommandChanged;
+        ReloadCommand.PropertyChanged += OnOpenCommandChanged;
         if (_library is not null) _library.Changed += OnLibraryChanged;
         SelectAudioTrackCommand = new AsyncRelayCommand<PlaybackTrack>(track => Playback.SetAudioTrackAsync(track!.Id),
             track => CanSelectTracks && track is not null && AudioTracks.Contains(track));
@@ -89,8 +91,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             NotifyInteraction();
             SubtitleMenuRequested?.Invoke(this, EventArgs.Empty);
         }, () => CanSelectTracks);
-        PlayPauseCommand = new AsyncRelayCommand(PlayPauseAsync, () => HasMedia && !IsOpening);
-        StopCommand = new AsyncRelayCommand(playback.StopAsync, () => HasMedia && !IsOpening);
+        PlayPauseCommand = new AsyncRelayCommand(PlayPauseAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
+        StopCommand = new AsyncRelayCommand(playback.StopAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
         RewindCommand = new RelayCommand(() => SeekBy(-5_000), () => CanSeek);
         ForwardCommand = new RelayCommand(() => SeekBy(5_000), () => CanSeek);
         PreviousFrameCommand = new RelayCommand(() => StepFrame(-1), () => CanStepFrames);
@@ -118,6 +120,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IAsyncRelayCommand PreviousEpisodeCommand { get; }
     public IAsyncRelayCommand NextEpisodeCommand { get; }
     public IAsyncRelayCommand NextUpCommand { get; }
+    public IAsyncRelayCommand ReloadCommand { get; }
     public IRelayCommand SkipIntroCommand { get; }
     public IRelayCommand SkipCreditsCommand { get; }
     private bool CanShowSegment => !_isSeeking && !AreControlsLocked && !HasError && CanSeek &&
@@ -143,7 +146,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool HasEpisodeNavigationMessage => EpisodeNavigationMessage is not null;
     private bool IsChangingMedia => OpenFileCommand?.IsRunning == true || OpenLibraryFileCommand?.IsRunning == true ||
         StartOverFileCommand?.IsRunning == true || PlayEpisodeCommand?.IsRunning == true ||
-        PreviousEpisodeCommand?.IsRunning == true || NextEpisodeCommand?.IsRunning == true || NextUpCommand?.IsRunning == true;
+        PreviousEpisodeCommand?.IsRunning == true || NextEpisodeCommand?.IsRunning == true || NextUpCommand?.IsRunning == true ||
+        ReloadCommand?.IsRunning == true;
     public IAsyncRelayCommand<PlaybackTrack> SelectAudioTrackCommand { get; }
     public IAsyncRelayCommand<PlaybackTrack> SelectSubtitleTrackCommand { get; }
     public IAsyncRelayCommand LoadSubtitleCommand { get; }
@@ -165,7 +169,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool HasMedia => _snapshot.HasMedia;
     public bool IsPlaying => _snapshot.State == PlaybackState.Playing;
     public bool IsOpening => _snapshot.State == PlaybackState.Opening;
-    public bool CanSeek => _snapshot.CanSeek && _snapshot.DurationMs > 0;
+    public bool CanSeek => !IsChangingMedia && !IsOpening && _snapshot.CanSeek && _snapshot.DurationMs > 0;
     public bool CanStepFrames => CanSeek && _snapshot.State == PlaybackState.Paused &&
         double.IsFinite(_snapshot.VideoFrameDurationMs) && _snapshot.VideoFrameDurationMs > 0;
     public bool IsMuted => _snapshot.IsMuted;
@@ -177,7 +181,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool HasErrorDetails => !string.IsNullOrWhiteSpace(ErrorDetails);
     public string? HistoryWarning => _history?.Warning;
     public bool HasHistoryWarning => HistoryWarning is not null;
-    public bool CanSelectTracks => _snapshot.State is PlaybackState.Playing or PlaybackState.Paused;
+    public bool CanSelectTracks => !IsChangingMedia && _snapshot.State is PlaybackState.Playing or PlaybackState.Paused;
     public bool HasAudioTracks => CanSelectTracks && AudioTracks.Count > 0;
     public IReadOnlyList<PlaybackTrack> AudioTracks => _snapshot.AudioTracks;
     public IReadOnlyList<PlaybackTrack> SubtitleTracks => _snapshot.SubtitleTracks;
@@ -200,7 +204,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public string CurrentTime => PlaybackMath.FormatTime((long)SeekPositionMs);
     public string TotalTime => PlaybackMath.FormatTime(_snapshot.DurationMs);
     public string RemainingTime => "−" + PlaybackMath.FormatTime(_snapshot.DurationMs - (long)SeekPositionMs);
-    public bool CanAdjustPicture => HasMedia && !IsOpening;
+    public bool CanAdjustPicture => HasMedia && !IsOpening && !IsChangingMedia;
     public IReadOnlyList<double> Speeds => PlaybackOptions.Speeds;
     public double SelectedSpeed
     {
@@ -459,10 +463,23 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     private void OnOpenCommandChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(IAsyncRelayCommand.IsRunning)) return;
-        OpenFileCommand.NotifyCanExecuteChanged();
-        OpenLibraryFileCommand.NotifyCanExecuteChanged();
-        StartOverFileCommand.NotifyCanExecuteChanged();
-        NotifyEpisodeCommands();
+        _dispatcher.Post(() =>
+        {
+            if (_disposed) return;
+            OpenFileCommand.NotifyCanExecuteChanged();
+            OpenLibraryFileCommand.NotifyCanExecuteChanged();
+            StartOverFileCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(string.Empty);
+            NotifyPlaybackCommands();
+        });
+    }
+
+    private async Task ReloadAsync()
+    {
+        NotifyInteraction();
+        CommitSeek();
+        await FlushProgressAsync();
+        await Playback.ReloadAsync();
     }
 
     private async Task PlayPauseAsync()
@@ -499,8 +516,14 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         }
         // A snapshot is one coherent UI update; native callbacks never touch WPF objects.
         OnPropertyChanged(string.Empty);
+        NotifyPlaybackCommands();
+    });
+
+    private void NotifyPlaybackCommands()
+    {
         PlayPauseCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
+        ReloadCommand.NotifyCanExecuteChanged();
         RewindCommand.NotifyCanExecuteChanged();
         ForwardCommand.NotifyCanExecuteChanged();
         PreviousFrameCommand.NotifyCanExecuteChanged();
@@ -512,7 +535,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         SelectAspectRatioCommand.NotifyCanExecuteChanged();
         SubtitleMenuCommand.NotifyCanExecuteChanged();
         NotifyEpisodeCommands();
-    });
+    }
 
     public Task FlushProgressAsync() => _history?.FlushAsync() ?? Task.CompletedTask;
 
@@ -540,6 +563,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PreviousEpisodeCommand.PropertyChanged -= OnOpenCommandChanged;
         NextEpisodeCommand.PropertyChanged -= OnOpenCommandChanged;
         NextUpCommand.PropertyChanged -= OnOpenCommandChanged;
+        ReloadCommand.PropertyChanged -= OnOpenCommandChanged;
         _segmentCancellation?.Cancel();
         _segmentCancellation?.Dispose();
         if (_library is not null) _library.Changed -= OnLibraryChanged;

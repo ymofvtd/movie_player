@@ -30,6 +30,8 @@ public sealed partial class LibraryTemplateTests
         var view = new PlayerView { DataContext = player };
         var window = new Window { Content = view, Width = 1280, Height = 720, WindowStyle = WindowStyle.None,
             ShowActivated = false, ShowInTaskbar = false, Left = -20000, Top = 0 };
+        var previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         try
         {
             window.Show();
@@ -52,6 +54,20 @@ public sealed partial class LibraryTemplateTests
             PumpUntil(() => overlay.RenderSize == host.RenderSize);
             var size = host.RenderSize;
             var ratio = native.AspectRatio;
+            playback.Pause();
+            PumpUntil(() => playback.Current.State == PlaybackState.Paused && playback.Current.CanSeek);
+            playback.Seek(5000);
+            PumpUntil(() => Math.Abs(native.Time - 5000) < 200);
+            var reloadButton = Assert.IsType<Button>(view.FindName("ReloadButton"));
+            Assert.Same(player.ReloadCommand, reloadButton.Command);
+            reloadButton.Command.Execute(null);
+            PumpUntil(() => !player.ReloadCommand.IsRunning && playback.Current.State == PlaybackState.Paused &&
+                playback.Current.CanSeek && Math.Abs(native.Time - 5000) < 200);
+            Assert.Equal(handle, native.Hwnd);
+            Assert.Equal(size, host.RenderSize);
+            Assert.True(IsChild(mainHandle, overlayHandle));
+            playback.PlayAsync().GetAwaiter().GetResult();
+            PumpUntil(() => player.IsPlaying);
             var controls = Assert.IsType<Border>(view.FindName("PlaybackControls"));
             var playPause = Assert.Single(Descendants(controls).OfType<Button>(), button => button.Command == player.PlayPauseCommand);
             // Focus left on Play must not hold controls open, including in windowed playback.
@@ -110,6 +126,7 @@ public sealed partial class LibraryTemplateTests
             playback.StopAsync().GetAwaiter().GetResult();
             window.Close();
             PumpUntil(() => !view.IsLoaded);
+            SynchronizationContext.SetSynchronizationContext(previousContext);
         }
     }
 

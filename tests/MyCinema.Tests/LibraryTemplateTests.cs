@@ -359,6 +359,8 @@ public sealed partial class LibraryTemplateTests
         public Task InitializeAsync() => Task.CompletedTask;
         public Task OpenAsync(string filePath, long startPositionMs = 0) => Task.CompletedTask;
         public Task PlayAsync() => Task.CompletedTask;
+        public int ReloadCount { get; private set; }
+        public Task ReloadAsync() { ReloadCount++; return Task.CompletedTask; }
         public void Pause() { }
         public Task StopAsync() => Task.CompletedTask;
         public long? LastSeek { get; private set; }

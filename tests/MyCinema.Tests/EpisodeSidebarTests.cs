@@ -403,6 +403,7 @@ public sealed class EpisodeSidebarTests : IDisposable
         }
         public void Pause() { if (Current.State == PlaybackState.Playing) Emit(Current with { State = PlaybackState.Paused, Revision = Current.Revision + 1 }); }
         public Task PlayAsync() => Task.CompletedTask;
+        public Task ReloadAsync() => Task.CompletedTask;
         public Task StopAsync() => Task.CompletedTask;
         public void Seek(long positionMs) => Position(positionMs);
         public void SetVolume(int volume) { }

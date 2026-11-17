@@ -112,6 +112,10 @@
                         Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0" ToolTip="Show or hide the episode panel" />
                 <Button DockPanel.Dock="Right" Content="Open video" Command="{Binding OpenFileCommand}"
                         Style="{StaticResource PlayerButtonStyle}" Margin="16,0,0,0" ToolTip="Open a video (Ctrl+O)" />
+                <Button x:Name="ReloadButton" DockPanel.Dock="Right" Content="Reload" Command="{Binding ReloadCommand}"
+                        Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0"
+                        ToolTip="Reload a frozen player and keep your position (F5)" AutomationProperties.Name="Reload player"
+                        AutomationProperties.HelpText="Rebuilds playback at your current time without resetting watch progress." />
                 <Button DockPanel.Dock="Right" Content="Lock controls" Command="{Binding ToggleControlsLockCommand}"
                         Visibility="{Binding CanLockControls, Converter={StaticResource BooleanToVisibility}}"
                         Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0"

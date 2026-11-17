@@ -44,6 +44,7 @@ public static class PlayerKeyboard
         System.Windows.Input.ICommand? command = e.Key switch
         {
             Key.Space => player.PlayPauseCommand,
+            Key.F5 => player.ReloadCommand,
             Key.Left => player.RewindCommand,
             Key.Right => player.ForwardCommand,
             Key.OemComma => player.PreviousFrameCommand,

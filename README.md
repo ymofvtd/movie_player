@@ -165,6 +165,7 @@ Episode switches use the existing Resume / Start Over / Cancel behavior and save
 | , / . | Previous / next frame while paused |
 | Up / Down | Raise / lower volume by five points |
 | M | Mute / unmute |
+| F5 | Reload the player at the current time |
 | P / N | Previous / next available episode, across seasons |
 | S | Reveal playback options and open the subtitle selector |
 | Tab from the video | Reveal and focus playback controls |
@@ -178,6 +179,8 @@ Playback shortcuts avoid editable text fields, selectors, and modal dialogs. Esc
 Frame stepping uses the selected video's reported frame rate and stays paused. It is available for seekable videos with frame-rate metadata; variable-frame-rate files use their reported average rate.
 
 Browsing away pauses playback. Returning to Player preserves the picture and position within the current application session. Scanned library progress survives application restarts; volume and track choices are not yet saved across restarts.
+
+If the picture freezes, choose **Reload** in the player header or press **F5**. This rebuilds VLC playback at the current timestamp without a resume prompt or resetting saved progress. Paused playback stays paused; volume, mute, speed, picture shape, and track choices are retained.
 
 Unavailable and malformed files produce a readable player error. Expand **Details** for the attempted file path or available VLC diagnostics. **Dismiss** clears the message without stopping playback. A failed session offers **Retry** in the transport controls; another local file can also be opened. Selecting an unavailable file while valid media is playing preserves the existing session. Audio/subtitle, speed, and picture-option failures also preserve current playback.
 

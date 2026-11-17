@@ -32,12 +32,17 @@ public sealed partial class LibraryTemplateTests
         Assert.Equal(5040, playback.LastSeek);
         Assert.True(Press(Key.OemComma, new Button()).Handled);
         Assert.Equal(4960, playback.LastSeek);
+        Assert.True(Press(Key.F5).Handled);
+        Assert.Equal(1, playback.ReloadCount);
         foreach (var focus in new object[] { new TextBox(), new PasswordBox(), new ComboBox() })
         {
+            Assert.False(Press(Key.F5, focus).Handled);
             Assert.False(Press(Key.OemPeriod, focus).Handled);
             Assert.Equal(4960, playback.LastSeek);
         }
         Assert.False(Press(Key.OemPeriod, visible: false).Handled);
+        Assert.False(Press(Key.F5, visible: false).Handled);
+        Assert.Equal(1, playback.ReloadCount);
         Assert.Equal(4960, playback.LastSeek);
         Assert.True(Press(Key.Right).Handled);
         Assert.Equal(10000, playback.LastSeek);
@@ -51,6 +56,8 @@ public sealed partial class LibraryTemplateTests
         Assert.True(Press(Key.OemComma).Handled);
         Assert.True(Press(Key.OemPeriod).Handled);
         Assert.True(Press(Key.Right).Handled);
+        Assert.True(Press(Key.F5).Handled);
+        Assert.Equal(1, playback.ReloadCount);
         Assert.Equal(15000, playback.LastSeek);
     }
 }
