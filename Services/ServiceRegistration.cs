@@ -32,6 +32,7 @@ public static class ServiceRegistration
         services.AddSingleton<INavigationService, NavigationService>();
         services.AddSingleton<PlaybackService>();
         services.AddSingleton<IPlaybackService>(provider => provider.GetRequiredService<PlaybackService>());
+        services.AddSingleton<IPlaybackSegmentService, PlaybackSegmentService>();
         services.AddSingleton<WatchHistoryService>();
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<IUiDispatcher>(_ => new WpfUiDispatcher(Dispatcher.CurrentDispatcher));

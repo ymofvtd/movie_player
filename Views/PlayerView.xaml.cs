@@ -106,7 +106,8 @@ public partial class PlayerView : UserControl
         if (_lastMousePosition == position) return;
         _lastMousePosition = position;
         var local = e.GetPosition(PlayerOverlay);
-        _viewModel?.NotifyPointerMovement(local.Y, PlayerOverlay.ActualHeight);
+        if (SegmentActions.IsMouseOver) _viewModel?.NotifyInteraction();
+        else _viewModel?.NotifyPointerMovement(local.Y, PlayerOverlay.ActualHeight);
     }
 
     private void OnIdleTick(object? sender, EventArgs e)

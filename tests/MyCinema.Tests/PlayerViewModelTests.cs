@@ -116,6 +116,66 @@ public sealed class PlayerViewModelTests
         public string? ChooseSubtitleFile() => null;
         public ResumeChoice ChooseResume(string title, long positionMs) => ResumeChoice.Resume;
     }
+
+    [Fact]
+    public void SkipButtonsFollowPlaybackBoundariesIgnoreHiddenControlsAndRespectTheLock()
+    {
+        var playback = new FakePlayback();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(),
+            segmentService: new FixedSegments());
+        playback.Emit(new(PlaybackState.Playing, "episode.mkv", 10_000, 100_000, true, Revision: 1));
+        Assert.True(player.ShowSkipIntro);
+        player.SkipIntroCommand.Execute(null);
+        Assert.Equal(45_000, playback.LastSeek);
+        player.IsFullscreen = true;
+        player.ToggleControlsLockCommand.Execute(null);
+        Assert.False(player.ShowSkipIntro);
+        Assert.False(player.SkipIntroCommand.CanExecute(null));
+        player.ToggleControlsLockCommand.Execute(null);
+        Assert.True(player.ShowSkipIntro);
+        player.BeginSeek();
+        Assert.False(player.ShowSkipIntro);
+        player.CommitSeek();
+        playback.Emit(playback.Current with { PositionMs = 45_000, Revision = 2 });
+        Assert.False(player.ShowSkipIntro);
+        playback.Emit(playback.Current with { PositionMs = 90_000, Revision = 3 });
+        Assert.True(player.ShowSkipCredits);
+        player.SkipCreditsCommand.Execute(null);
+        Assert.Equal(98_000, playback.LastSeek); // Preserve the post-credit scene.
+        playback.Emit(playback.Current with { State = PlaybackState.Stopped, Revision = 4 });
+        Assert.False(player.ShowSkipCredits);
+        playback.Emit(new(PlaybackState.Playing, "other.mkv", 15_000, 20_000, true, Revision: 5));
+        Assert.False(player.ShowSkipIntro); // Imported range exceeds this edition's actual duration.
+    }
+
+    [Fact]
+    public async Task LateTimingReadsCannotReplaceTheCurrentVideosSegments()
+    {
+        var playback = new FakePlayback();
+        var delayed = new DelayedSegments();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), segmentService: delayed);
+        playback.Emit(new(PlaybackState.Playing, "first.mkv", 15_000, 100_000, true, Revision: 1));
+        playback.Emit(new(PlaybackState.Playing, "second.mkv", 15_000, 100_000, true, Revision: 2));
+        delayed.First.SetResult(new([new(PlaybackSegmentKind.Intro, 0, 45_000)]));
+        await delayed.First.Task;
+        Assert.False(player.ShowSkipIntro);
+    }
+
+    private sealed class FixedSegments : IPlaybackSegmentService
+    {
+        public Task<PlaybackSegmentData> LoadAsync(string path, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PlaybackSegmentData([new(PlaybackSegmentKind.Intro, 10_000, 45_000),
+                new(PlaybackSegmentKind.Outro, 90_000, 98_000)]));
+    }
+
+    private sealed class DelayedSegments : IPlaybackSegmentService
+    {
+        public TaskCompletionSource<PlaybackSegmentData> First { get; } = new();
+        public Task<PlaybackSegmentData> LoadAsync(string path, CancellationToken cancellationToken = default) =>
+            path == "first.mkv" ? First.Task : Task.FromResult(PlaybackSegmentData.Empty);
+    }
     [Fact]
     public async Task SpeedAndAspectChoicesIgnoreBindingResetsAndUseTheCurrentSnapshot()
     {

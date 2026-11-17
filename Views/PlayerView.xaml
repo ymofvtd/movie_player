@@ -136,6 +136,21 @@
             <views:EpisodeSidebar x:Name="EpisodePanel" HorizontalAlignment="Right"
                                   Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}" />
         </Grid>
+        <StackPanel x:Name="SegmentActions" Grid.Row="1" Orientation="Horizontal"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,16">
+            <Button Content="{Binding SkipIntroLabel}" Command="{Binding SkipIntroCommand}"
+                    Visibility="{Binding ShowSkipIntro, Converter={StaticResource BooleanToVisibility}}"
+                    Style="{StaticResource SecondaryButtonStyle}" MinWidth="120" Padding="20,12" Margin="0,0,10,0"
+                    ToolTip="Jump to the end of this opening segment" AutomationProperties.Name="{Binding SkipIntroLabel}" />
+            <Button Content="Skip credits" Command="{Binding SkipCreditsCommand}"
+                    Visibility="{Binding ShowSkipCredits, Converter={StaticResource BooleanToVisibility}}"
+                    Style="{StaticResource SecondaryButtonStyle}" MinWidth="120" Padding="20,12" Margin="0,0,10,0"
+                    ToolTip="Jump to the end of these credits" AutomationProperties.Name="Skip credits" />
+            <Button Content="{Binding NextUpLabel}" Command="{Binding NextUpCommand}"
+                    Visibility="{Binding ShowNextUp, Converter={StaticResource BooleanToVisibility}}"
+                    Style="{StaticResource PrimaryButtonStyle}" MinWidth="120" Padding="20,12"
+                    AutomationProperties.Name="{Binding NextUpLabel}" />
+        </StackPanel>
         <Border Grid.Row="2" Background="{DynamicResource AccentSurfaceBrush}" Padding="16,10"
                 Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibility}}">
             <DockPanel>
@@ -159,9 +174,11 @@
         <Border x:Name="PlaybackControls" Grid.Row="4" Style="{StaticResource PlayerSurfaceStyle}" Padding="16,6"
                 Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <StackPanel>
+                <TextBlock Text="{Binding TimingWarning}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                           Visibility="{Binding HasTimingWarning, Converter={StaticResource BooleanToVisibility}}" />
+                <TextBlock Text="{Binding EpisodeNavigationMessage}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                           Visibility="{Binding HasEpisodeNavigationMessage, Converter={StaticResource BooleanToVisibility}}" />
                 <StackPanel Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
-                    <TextBlock Text="{Binding EpisodeNavigationMessage}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11"
-                               Visibility="{Binding HasEpisodeNavigationMessage, Converter={StaticResource BooleanToVisibility}}" />
                     <TextBlock Text="{Binding Sidebar.Warning}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11"
                                Visibility="{Binding Sidebar.HasWarning, Converter={StaticResource BooleanToVisibility}}" />
                 </StackPanel>

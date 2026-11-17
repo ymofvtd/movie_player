@@ -115,6 +115,30 @@ Use **Subtitles** to select an embedded track or **Off**. **Load subtitles…** 
 
 **Speed** offers 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75×, and 2×. **Aspect ratio** defaults to **Original**, fitting the picture with its source proportions. Select 16:9, 4:3, or 2.35:1 to correct a file's picture shape; choose Original to reset. Speed and aspect-ratio choices survive Stop/replay and file switches within this session. They do not reset progress, reopen media, or change the source file. They return to defaults after application restart.
 
+### Skip intros, recaps, credits, and play the next title
+
+Place a UTF-8 text file beside a video, with the same basename and `.skip.txt` suffix:
+
+```text
+Show - 2025 - S01E01.mkv
+Show - 2025 - S01E01.skip.txt
+```
+
+```ini
+# Times are MM:SS or HH:MM:SS; milliseconds are optional.
+intro=00:00-00:45
+recap=00:45-01:20
+outro=42:10-43:00
+```
+
+During each range, **Skip intro**, **Skip recap**, or **Skip credits** appears over the picture, even when the ordinary controls have hidden. Clicking seeks to the range's end. **Next episode** appears during marked credits and after natural playback end, when another available episode exists; it crosses seasons. Movies in a franchise offer **Next movie** in the saved collection order. These actions are manual; there is no countdown or automatic skipping. The last episode/movie and standalone movies have no next-title action. Controls lock also hides and disables segment actions.
+
+Use `outro=42:10-end` for credits that extend to the file's end. For a scene after the credits, give the credits' actual end so **Skip credits** lands before that scene. Multiple `outro=` lines support separate credit ranges around extra scenes. Missing or out-of-bounds timings hide the relevant button. Invalid/unreadable timing files produce a small warning while playback remains available. Reopen the video to reload edited timings; a library rescan is not required.
+
+Defaults: `skip.txt` or `intro.txt` in a season/show folder can contain the same named fields. An `intro.txt` containing only `00:00-00:45` also works, as does a separate `outro.txt`. A season inherits its parent show's defaults; movies do not inherit franchise timings. Priority, independently for each kind: `video.mkv.skip.txt` (specific edition), `video.skip.txt`, `video.intro.txt` / `video.outro.txt`, season/current-folder defaults, then show defaults. `intro=none`, `recap=none`, or `outro=none` disables an inherited kind.
+
+The app reads local timings offline. The optional developer utility `scripts/Import-SkipTimings.py --root D:\Entertaiment --output .artifacts\skip-import --apply` retrieves IntroDB community timings for catalogued media. It matches exact title/year/type through IMDb, checks ranges/confidence against runtime read by the installed VLC, preserves existing timing files, leaves combined episodes for manual timing, and writes source responses plus `import-report.json`. Omit `--apply` for a report without creating sidecars. It does not edit the database or videos. Community release offsets still need a playback check; no timing is inferred from a title alone. Contains data from [IntroDB](https://introdb.app), available under the [ODbL](https://opendatacommons.org/licenses/odbl/1-0/).
+
 ### Progress and resume
 
 For files already in the scanned library, progress saves every ten seconds during playback and on pause, Stop, file switching, navigation away, natural end, and application close. Stop preserves the position before resetting the player; pressing Play after Stop starts at the beginning. Files opened outside the scanned library play normally and do not create library/history records.

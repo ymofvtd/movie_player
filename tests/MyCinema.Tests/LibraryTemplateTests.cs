@@ -93,6 +93,7 @@ public sealed partial class LibraryTemplateTests
                 VerifyPosterCache();
                 VerifyPolishedLayouts(artifacts);
                 VerifyNativeVideoOverlay();
+                VerifySegmentActionsLayout(artifacts);
                 completion.SetResult();
             }
             catch (Exception error) { completion.SetException(error); }
@@ -213,7 +214,7 @@ public sealed partial class LibraryTemplateTests
                 list.ScrollIntoView(active);
                 view.UpdateLayout();
                 Assert.NotNull(list.ItemContainerGenerator.ContainerFromItem(active));
-                var navigation = Descendants(view).OfType<Button>().Where(b => AutomationProperties.GetName(b) is "Previous episode" or "Next episode").ToArray();
+                var navigation = Descendants(view).OfType<Button>().Where(b => b.Command == player.PreviousEpisodeCommand || b.Command == player.NextEpisodeCommand).ToArray();
                 Assert.Equal(2, navigation.Length);
                 Assert.False(navigation[0].IsEnabled);
                 Assert.True(navigation[1].IsEnabled);
@@ -352,7 +353,8 @@ public sealed partial class LibraryTemplateTests
             AudioTracks = [new(1, "Russian · Dub"), new(2, "English · Original")], AudioTrackId = 2,
             SubtitleTracks = [new(-1, "Off"), new(3, "English · Full subtitles")]
         };
-        public event EventHandler<PlaybackChangedEventArgs>? Changed { add { } remove { } }
+        public event EventHandler<PlaybackChangedEventArgs>? Changed;
+        public void Emit(PlaybackSnapshot snapshot) { Current = snapshot; Changed?.Invoke(this, new(snapshot)); }
         public Task InitializeAsync() => Task.CompletedTask;
         public Task OpenAsync(string filePath, long startPositionMs = 0) => Task.CompletedTask;
         public Task PlayAsync() => Task.CompletedTask;

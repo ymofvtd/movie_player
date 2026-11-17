@@ -323,6 +323,57 @@ public sealed class EpisodeSidebarTests : IDisposable
         Assert.Equal("False", await _services.GetRequiredService<ISettingsRepository>().GetAsync("EpisodeSidebar.IsExpanded"));
     }
 
+    [Fact]
+    public async Task NextUpAppearsDuringCreditsAndAtEndWithoutAutomaticallyAdvancing()
+    {
+        await SetupAsync();
+        await File.WriteAllTextAsync(Path.ChangeExtension(_first.FilePath, ".skip.txt"), "intro=00:00-00:10\noutro=01:30-01:38");
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        Assert.True(Player.ShowSkipIntro);
+        _playback.Position(90_000);
+        Assert.True(Player.ShowNextUp);
+        Assert.True(Player.ShowSkipCredits);
+        Assert.Equal("Next episode", Player.NextUpLabel);
+        Assert.Equal(_first.FilePath, _playback.Current.FilePath);
+        _playback.Position(99_000);
+        Assert.False(Player.ShowNextUp); // Extra scene after credits.
+        _playback.Emit(_playback.Current with { State = PlaybackState.Ended, Revision = _playback.Current.Revision + 1 });
+        Assert.True(Player.ShowNextUp);
+        await Player.NextUpCommand.ExecuteAsync(null);
+        Assert.Equal(_second.FilePath, _playback.Current.FilePath);
+        Assert.False(Player.ShowSkipIntro); // The previous file's sidecar is cleared.
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_third);
+        _playback.Emit(_playback.Current with { State = PlaybackState.Ended, Revision = _playback.Current.Revision + 1 });
+        Assert.False(Player.ShowNextUp); // Final episode has no next item.
+    }
+
+    [Fact]
+    public async Task FranchiseNextUpUsesSavedMovieOrderAndSkipsUnavailableFiles()
+    {
+        await SetupAsync();
+        var repository = _services!.GetRequiredService<ILibraryRepository>();
+        var franchise = await repository.SaveItemAsync(new() { Title = "Collection", ItemType = LibraryItemType.Franchise });
+        async Task<MediaFile> Movie(int number, bool exists = true)
+        {
+            var item = await repository.SaveItemAsync(new() { Title = $"Movie {number}", SortTitle = $"{number:00}",
+                ItemType = LibraryItemType.Movie, ParentId = franchise.Id });
+            var path = Path.Combine(_directory, $"franchise{number}.mkv");
+            if (exists) await File.WriteAllTextAsync(path, "movie");
+            return await repository.SaveFileAsync(new() { LibraryItemId = item.Id, FilePath = path, IsAvailable = true });
+        }
+        var first = await Movie(1);
+        await Movie(2, false);
+        var last = await Movie(3);
+        await Store.RefreshAsync();
+        await Player.OpenLibraryFileCommand.ExecuteAsync(first);
+        _playback.Emit(_playback.Current with { State = PlaybackState.Ended, Revision = _playback.Current.Revision + 1 });
+        Assert.True(Player.ShowNextUp);
+        Assert.Equal("Next movie", Player.NextUpLabel);
+        await Player.NextUpCommand.ExecuteAsync(null);
+        Assert.Equal(last.FilePath, _playback.Current.FilePath);
+        Assert.False(Player.NextUpCommand.CanExecute(null));
+    }
+
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
         public void Post(Action action) => action();
