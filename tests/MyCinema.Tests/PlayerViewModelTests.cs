@@ -64,7 +64,7 @@ public sealed class PlayerViewModelTests
         player.RewindCommand.Execute(null);
         Assert.Equal(0, playback.LastSeek);
         player.ForwardCommand.Execute(null);
-        Assert.Equal(15_000, playback.LastSeek);
+        Assert.Equal(10_000, playback.LastSeek);
         await player.PlayPauseCommand.ExecuteAsync(null);
         Assert.True(playback.Paused);
         player.MuteCommand.Execute(null);
@@ -78,6 +78,27 @@ public sealed class PlayerViewModelTests
 
     private static PlayerViewModel CreatePlayer(FakePlayback playback) =>
         new(playback, new FakeDialogs(null), new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher());
+
+    [Fact]
+    public void FrameCommandsRequirePausedSeekableVideoAndKeepItPaused()
+    {
+        var playback = new FakePlayback();
+        using var player = CreatePlayer(playback);
+        Assert.False(player.NextFrameCommand.CanExecute(null));
+        playback.Emit(new(PlaybackState.Playing, "film.mp4", 5000, 60000, true, Revision: 1) { VideoFrameDurationMs = 40 });
+        Assert.False(player.PreviousFrameCommand.CanExecute(null));
+        playback.Emit(playback.Current with { State = PlaybackState.Paused, Revision = 2 });
+        Assert.True(player.NextFrameCommand.CanExecute(null));
+        player.PreviousFrameCommand.Execute(null);
+        Assert.Equal(4960, playback.LastSeek);
+        player.NextFrameCommand.Execute(null);
+        Assert.Equal(5040, playback.LastSeek);
+        Assert.Equal(PlaybackState.Paused, playback.Current.State);
+        playback.Emit(playback.Current with { VideoFrameDurationMs = 0, Revision = 3 });
+        Assert.False(player.NextFrameCommand.CanExecute(null));
+        playback.Emit(playback.Current with { VideoFrameDurationMs = 40, CanSeek = false, Revision = 4 });
+        Assert.False(player.PreviousFrameCommand.CanExecute(null));
+    }
 
     [Fact]
     public async Task SelectorsUseNativeTrackIdsAndIgnoreBindingResetsOrUnavailableTracks()

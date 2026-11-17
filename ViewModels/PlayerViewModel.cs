@@ -91,8 +91,10 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         }, () => CanSelectTracks);
         PlayPauseCommand = new AsyncRelayCommand(PlayPauseAsync, () => HasMedia && !IsOpening);
         StopCommand = new AsyncRelayCommand(playback.StopAsync, () => HasMedia && !IsOpening);
-        RewindCommand = new RelayCommand(() => SeekBy(-10_000), () => CanSeek);
-        ForwardCommand = new RelayCommand(() => SeekBy(10_000), () => CanSeek);
+        RewindCommand = new RelayCommand(() => SeekBy(-5_000), () => CanSeek);
+        ForwardCommand = new RelayCommand(() => SeekBy(5_000), () => CanSeek);
+        PreviousFrameCommand = new RelayCommand(() => StepFrame(-1), () => CanStepFrames);
+        NextFrameCommand = new RelayCommand(() => StepFrame(1), () => CanStepFrames);
         MuteCommand = new RelayCommand(() => playback.SetMute(!IsMuted));
         FullscreenCommand = new RelayCommand(() => IsFullscreen = !IsFullscreen);
         ExitFullscreenCommand = new RelayCommand(() => IsFullscreen = false);
@@ -154,6 +156,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IAsyncRelayCommand StopCommand { get; }
     public IRelayCommand RewindCommand { get; }
     public IRelayCommand ForwardCommand { get; }
+    public IRelayCommand PreviousFrameCommand { get; }
+    public IRelayCommand NextFrameCommand { get; }
     public IRelayCommand MuteCommand { get; }
     public IRelayCommand FullscreenCommand { get; }
     public IRelayCommand ExitFullscreenCommand { get; }
@@ -162,6 +166,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool IsPlaying => _snapshot.State == PlaybackState.Playing;
     public bool IsOpening => _snapshot.State == PlaybackState.Opening;
     public bool CanSeek => _snapshot.CanSeek && _snapshot.DurationMs > 0;
+    public bool CanStepFrames => CanSeek && _snapshot.State == PlaybackState.Paused &&
+        double.IsFinite(_snapshot.VideoFrameDurationMs) && _snapshot.VideoFrameDurationMs > 0;
     public bool IsMuted => _snapshot.IsMuted;
     public string MediaTitle => _snapshot.FilePath is null ? "Your next movie starts here" : Path.GetFileNameWithoutExtension(_snapshot.FilePath);
     public string? FilePath => _snapshot.FilePath;
@@ -467,6 +473,14 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
 
     private void SeekBy(long offset) => Playback.Seek(PlaybackMath.OffsetPosition(_snapshot.PositionMs, offset, _snapshot.DurationMs));
 
+    private void StepFrame(int direction)
+    {
+        if (!CanStepFrames) return;
+        NotifyInteraction();
+        Playback.Seek(PlaybackMath.AdjacentFramePosition(_snapshot.PositionMs, direction,
+            _snapshot.VideoFrameDurationMs, _snapshot.DurationMs));
+    }
+
     private void OnPlaybackChanged(object? sender, PlaybackChangedEventArgs e) => _dispatcher.Post(() =>
     {
         if (_disposed || e.Snapshot.Revision <= _snapshot.Revision) return;
@@ -489,6 +503,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         StopCommand.NotifyCanExecuteChanged();
         RewindCommand.NotifyCanExecuteChanged();
         ForwardCommand.NotifyCanExecuteChanged();
+        PreviousFrameCommand.NotifyCanExecuteChanged();
+        NextFrameCommand.NotifyCanExecuteChanged();
         SelectAudioTrackCommand.NotifyCanExecuteChanged();
         SelectSubtitleTrackCommand.NotifyCanExecuteChanged();
         LoadSubtitleCommand.NotifyCanExecuteChanged();

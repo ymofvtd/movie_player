@@ -190,7 +190,7 @@
                     <views:DragSlider x:Name="PositionSlider" Grid.Column="1" Minimum="0" Maximum="{Binding DurationMs}" Value="{Binding SeekPositionMs, Mode=TwoWay}"
                             Style="{StaticResource PlayerSliderStyle}" IsEnabled="{Binding CanSeek}" Margin="12,0"
                             ScrubStarted="OnSeekStarted" ScrubCompleted="OnSeekCompleted" AutomationProperties.Name="Playback position"
-                            ToolTip="Seek through the video" Foreground="{DynamicResource AccentBrush}" />
+                            ToolTip="Seek through the video (Left/Right: 5 seconds; ,/.: previous/next frame while paused)" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Grid.Column="2" Text="{Binding TotalTime}" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center"
                                ToolTip="{Binding RemainingTime, StringFormat={}{0} left}" />
                 </Grid>

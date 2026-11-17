@@ -161,7 +161,8 @@ Episode switches use the existing Resume / Start Over / Cancel behavior and save
 |---|---|
 | Ctrl+O | Open a local video from any page |
 | Space | Play / pause on the Player page |
-| Left / Right | Rewind / forward ten seconds |
+| Left / Right | Rewind / forward five seconds |
+| , / . | Previous / next frame while paused |
 | Up / Down | Raise / lower volume by five points |
 | M | Mute / unmute |
 | P / N | Previous / next available episode, across seasons |
@@ -173,6 +174,8 @@ Episode switches use the existing Resume / Start Over / Cancel behavior and save
 | Double-click video | Toggle fullscreen |
 
 Playback shortcuts avoid editable text fields, selectors, and modal dialogs. Escape closes an open selector first; otherwise it exits fullscreen, including when a selector has focus.
+
+Frame stepping uses the selected video's reported frame rate and stays paused. It is available for seekable videos with frame-rate metadata; variable-frame-rate files use their reported average rate.
 
 Browsing away pauses playback. Returning to Player preserves the picture and position within the current application session. Scanned library progress survives application restarts; volume and track choices are not yet saved across restarts.
 

@@ -18,6 +18,7 @@ public sealed record PlaybackSnapshot(
     public int AudioTrackId { get; init; } = -1;
     public int SubtitleTrackId { get; init; } = -1;
     public double Speed { get; init; } = 1;
+    public double VideoFrameDurationMs { get; init; }
     public VideoAspectRatio AspectRatio { get; init; }
     public string? ErrorDetails { get; init; }
 }

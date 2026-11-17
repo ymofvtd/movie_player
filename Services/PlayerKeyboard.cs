@@ -46,6 +46,8 @@ public static class PlayerKeyboard
             Key.Space => player.PlayPauseCommand,
             Key.Left => player.RewindCommand,
             Key.Right => player.ForwardCommand,
+            Key.OemComma => player.PreviousFrameCommand,
+            Key.OemPeriod => player.NextFrameCommand,
             Key.F => player.FullscreenCommand,
             Key.Escape when player.IsFullscreen => player.ExitFullscreenCommand,
             Key.M => player.MuteCommand,

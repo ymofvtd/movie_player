@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using MyCinema.Core.Playback;
 using MyCinema.Infrastructure.Services;
@@ -274,6 +275,61 @@ public sealed class NativePlaybackTests : IDisposable
     {
         using var media = playback.MediaPlayer!.Media;
         return media?.Statistics.DecodedVideo > 0;
+    }
+
+    [Fact]
+    public async Task PausedVideoFrameStepsDecodeInBothDirectionsAndResetForAudioOnlyMedia()
+    {
+        using var playback = CreatePlayback();
+        using var player = new PlayerViewModel(playback, new ResumeDialogs(),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher());
+        var allocation = Marshal.AllocHGlobal(64 * 64 * 4 + 31);
+        var pixels = new IntPtr((allocation.ToInt64() + 31) & ~31L);
+        var displayedFrames = 0;
+        playback.MediaPlayer!.SetVideoFormat("RV32", 64, 64, 64 * 4);
+        playback.MediaPlayer.SetVideoCallbacks((_, planes) =>
+        {
+            Marshal.WriteIntPtr(planes, pixels);
+            return IntPtr.Zero;
+        }, null, (_, _) => Interlocked.Increment(ref displayedFrames));
+        try
+        {
+            await playback.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv"));
+            await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.CanSeek &&
+                playback.Current.VideoFrameDurationMs > 0 && Volatile.Read(ref displayedFrames) > 0);
+            playback.Pause();
+            await WaitUntil(() => playback.Current.State == PlaybackState.Paused);
+            var displayed = Volatile.Read(ref displayedFrames);
+            playback.Seek(5000);
+            await WaitUntil(() => Volatile.Read(ref displayedFrames) > displayed);
+            var frameMs = playback.Current.VideoFrameDurationMs;
+            foreach (var direction in new[] { 1, 1, -1, -1, -1, 1 })
+            {
+                displayed = Volatile.Read(ref displayedFrames);
+                var before = playback.Current.PositionMs;
+                var command = direction > 0 ? player.NextFrameCommand : player.PreviousFrameCommand;
+                Assert.True(command.CanExecute(null));
+                command.Execute(null);
+                var target = playback.Current.PositionMs;
+                Assert.InRange((target - before) * direction, frameMs - 1, frameMs + 1);
+                // Observe actual picture output: VLC's aggregate decoder statistics can lag while paused.
+                await WaitUntil(() => Volatile.Read(ref displayedFrames) > displayed,
+                    () => $"Direction: {direction}, from {before} to {target}. {playback.Current}");
+                Assert.InRange(playback.MediaPlayer.Time, target - 2, target + 2);
+                Assert.Equal(PlaybackState.Paused, playback.Current.State);
+            }
+            await playback.PlayAsync();
+            await WaitUntil(() => playback.Current.State == PlaybackState.Playing);
+            await playback.OpenAsync(WriteWave());
+            await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.AudioTracks.Count > 0);
+            Assert.Equal(0, playback.Current.VideoFrameDurationMs);
+            Assert.False(player.NextFrameCommand.CanExecute(null));
+        }
+        finally
+        {
+            await playback.StopAsync();
+            Marshal.FreeHGlobal(allocation);
+        }
     }
 
     [Fact]

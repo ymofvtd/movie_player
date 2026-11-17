@@ -27,4 +27,30 @@ public sealed class PlaybackMathTests
         Assert.Equal("26:03:04", PlaybackMath.FormatTime((26 * 3600L + 3 * 60 + 4) * 1000));
         Assert.Equal("00:00:00", PlaybackMath.FormatTime(-1));
     }
+
+    [Theory]
+    [InlineData(5000, -1, 40, 4960)]
+    [InlineData(5000, 1, 40, 5040)]
+    [InlineData(0, -1, 40, 0)]
+    [InlineData(19960, 1, 40, 19960)]
+    [InlineData(5000, 1, 0, 5000)]
+    public void FrameStepsFollowTheVideoRateAndStayInsideTheVideo(long position, int direction, double frameMs, long expected) =>
+        Assert.Equal(expected, PlaybackMath.AdjacentFramePosition(position, direction, frameMs, 20000));
+
+    [Theory]
+    [InlineData(24000, 1001)]
+    [InlineData(30000, 1001)]
+    [InlineData(60000, 1001)]
+    [InlineData(25, 1)]
+    public void RepeatedFrameStepsDoNotAccumulateRoundingDrift(int numerator, int denominator)
+    {
+        var frameMs = 1000d * denominator / numerator;
+        long position = 0;
+        for (var frame = 0; frame < 300; frame++)
+            position = PlaybackMath.AdjacentFramePosition(position, 1, frameMs, 60000);
+        Assert.Equal((long)Math.Round(300 * frameMs), position);
+        for (var frame = 0; frame < 300; frame++)
+            position = PlaybackMath.AdjacentFramePosition(position, -1, frameMs, 60000);
+        Assert.Equal(0, position);
+    }
 }

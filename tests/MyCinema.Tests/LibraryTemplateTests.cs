@@ -87,6 +87,7 @@ public sealed partial class LibraryTemplateTests
                 Directory.CreateDirectory(artifacts);
                 using (var output = File.Create(Path.Combine(artifacts, "PlayerControls.png"))) encoder.Save(output);
                 VerifySliderInputGeometry(view);
+                VerifyFrameKeyboardShortcuts();
                 VerifyFullscreenLayout();
                 VerifySidebarLayout(artifacts);
                 VerifyOrganizationPosterLayout(artifacts);
@@ -360,7 +361,8 @@ public sealed partial class LibraryTemplateTests
         public Task PlayAsync() => Task.CompletedTask;
         public void Pause() { }
         public Task StopAsync() => Task.CompletedTask;
-        public void Seek(long positionMs) { }
+        public long? LastSeek { get; private set; }
+        public void Seek(long positionMs) => LastSeek = positionMs;
         public void SetVolume(int volume) { }
         public void SetMute(bool muted) { }
         public Task SetAudioTrackAsync(int trackId) => Task.CompletedTask;

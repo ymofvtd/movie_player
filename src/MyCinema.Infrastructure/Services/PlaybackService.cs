@@ -76,7 +76,7 @@ public sealed class PlaybackService : IPlaybackService
             {
                 State = PlaybackState.Opening, FilePath = fullPath, PositionMs = 0,
                 DurationMs = 0, CanSeek = false, ErrorMessage = null, ErrorDetails = null, SessionId = state.SessionId + 1,
-                AudioTracks = [], SubtitleTracks = [], AudioTrackId = -1, SubtitleTrackId = -1
+                AudioTracks = [], SubtitleTracks = [], AudioTrackId = -1, SubtitleTrackId = -1, VideoFrameDurationMs = 0
             });
             using var media = new Media(_engine, fullPath, FromType.FromPath);
             if (startPositionMs > 0)
@@ -225,6 +225,9 @@ public sealed class PlaybackService : IPlaybackService
         if (!CanSelectTracks) return;
         using var media = MediaPlayer!.Media;
         var metadata = media?.Tracks ?? [];
+        var video = metadata.FirstOrDefault(t => t.TrackType == TrackType.Video && t.Id == MediaPlayer.VideoTrack);
+        var frameDuration = video.Data.Video.FrameRateNum > 0 && video.Data.Video.FrameRateDen > 0
+            ? 1000d * video.Data.Video.FrameRateDen / video.Data.Video.FrameRateNum : 0;
         PlaybackTrack Describe(TrackDescription track, TrackType type)
         {
             var language = metadata.FirstOrDefault(t => t.Id == track.Id && t.TrackType == type).Language;
@@ -243,11 +246,12 @@ public sealed class PlaybackService : IPlaybackService
             .Where(t => t.Id >= 0).Select(t => Describe(t, TrackType.Text))).ToArray();
         var current = Current;
         if (current.AudioTracks.SequenceEqual(audio) && current.SubtitleTracks.SequenceEqual(subtitles) &&
-            current.AudioTrackId == MediaPlayer.AudioTrack && current.SubtitleTrackId == MediaPlayer.Spu) return;
+            current.AudioTrackId == MediaPlayer.AudioTrack && current.SubtitleTrackId == MediaPlayer.Spu &&
+            current.VideoFrameDurationMs == frameDuration) return;
         Update(s => s with
         {
             AudioTracks = Array.AsReadOnly(audio), SubtitleTracks = Array.AsReadOnly(subtitles),
-            AudioTrackId = MediaPlayer.AudioTrack, SubtitleTrackId = MediaPlayer.Spu
+            AudioTrackId = MediaPlayer.AudioTrack, SubtitleTrackId = MediaPlayer.Spu, VideoFrameDurationMs = frameDuration
         });
     }
 
