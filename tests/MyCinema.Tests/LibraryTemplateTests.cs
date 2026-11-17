@@ -95,6 +95,7 @@ public sealed partial class LibraryTemplateTests
                 VerifyPolishedLayouts(artifacts);
                 VerifyNativeVideoOverlay();
                 VerifySegmentActionsLayout(artifacts);
+                VerifyTimingEditorLayout(artifacts);
                 completion.SetResult();
             }
             catch (Exception error) { completion.SetException(error); }

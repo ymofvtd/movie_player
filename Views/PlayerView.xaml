@@ -121,6 +121,10 @@
                         Style="{StaticResource PlayerButtonStyle}" Margin="12,0,0,0"
                         ToolTip="Hide controls and ignore accidental input; unlock with L or the unlock button"
                         AutomationProperties.Name="Lock controls" />
+                <CheckBox DockPanel.Dock="Right" Content="Auto-skip intro / outro" IsChecked="{Binding AutomaticallySkipTimings, Mode=TwoWay}"
+                          VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12"
+                          ToolTip="Skip intro and outro automatically. During an outro, start the next available episode and skip its marked intro. Turns off when MyCinema restarts."
+                          AutomationProperties.Name="Skip intro and outro automatically" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
                             Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
                     <Button Content="&#xE892;" FontFamily="Segoe MDL2 Assets" Command="{Binding PreviousEpisodeCommand}"
@@ -230,6 +234,71 @@
                             <ComboBox.ToolTip><StackPanel><TextBlock Text="Subtitles (S)" /><TextBlock Text="{Binding SelectedSubtitleTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
                             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
                         </ComboBox>
+                        <Button x:Name="TimingEditorButton" Content="Intro / Outro" Command="{Binding EditTimingsCommand}"
+                                Style="{StaticResource PlayerButtonStyle}" Height="32" FontSize="12" Padding="9,0" Margin="4,0,0,0"
+                                ToolTip="Add or edit intro and outro timings for this video"
+                                AutomationProperties.Name="Edit intro and outro timings" />
+                        <Popup x:Name="TimingEditorPopup" IsOpen="{Binding IsTimingEditorOpen, Mode=TwoWay}"
+                               PlacementTarget="{Binding ElementName=TimingEditorButton}" Placement="Top" VerticalOffset="-8"
+                               AllowsTransparency="True" StaysOpen="False" Opened="OnTimingEditorOpened" Closed="OnTimingEditorClosed">
+                            <Border Background="{DynamicResource ElevatedSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="18" Width="440"
+                                    DataContext="{Binding PlacementTarget.DataContext, ElementName=TimingEditorPopup}"
+                                    PreviewKeyDown="OnTimingEditorKeyDown" KeyboardNavigation.TabNavigation="Cycle">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <Button DockPanel.Dock="Right" Content="Close" Command="{Binding CloseTimingEditorCommand}"
+                                                Style="{StaticResource PlayerButtonStyle}" Padding="9,5" FontSize="12" AutomationProperties.Name="Close timing editor" />
+                                        <TextBlock Text="Intro / Outro" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <TextBlock Text="Set skip ranges for this video while you watch." Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,5" />
+                                    <TextBlock Text="Use m:ss or h:mm:ss. An outro can end at ‘end’." Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,12" />
+                                    <StackPanel DataContext="{Binding TimingEditor}">
+                                        <StackPanel IsEnabled="{Binding CanEdit}">
+                                            <TextBlock Text="No intro or outro timings yet. Add a range below." FontSize="12" Margin="0,4,0,12" TextWrapping="Wrap"
+                                                       Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibility}}" />
+                                            <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                <ItemsControl ItemsSource="{Binding Ranges}">
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                                                            <StackPanel>
+                                                                <DockPanel Margin="0,0,0,8">
+                                                                    <Button Content="Remove" DockPanel.Dock="Right" Command="{Binding RemoveCommand}" Style="{StaticResource SecondaryButtonStyle}" FontSize="11" Padding="7,3"
+                                                                            AutomationProperties.Name="{Binding Label, StringFormat=Remove {0} range}" />
+                                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                                </DockPanel>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="16" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Start" FontSize="11" Margin="0,0,0,4" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                                        <TextBox Text="{Binding Start, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MetadataTextBoxStyle}" Margin="0" FontFamily="Consolas" FontSize="13" Padding="8,6" AutomationProperties.Name="{Binding Label, StringFormat={}{0} start time}" />
+                                                                        <Button Content="Use current time" Command="{Binding UseStartCommand}" Style="{StaticResource SecondaryButtonStyle}" FontSize="11" Padding="6,5" Margin="0,5,0,0"
+                                                                                AutomationProperties.Name="{Binding Label, StringFormat=Use current time for {0} start}" />
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="2">
+                                                                        <TextBlock Text="End" FontSize="11" Margin="0,0,0,4" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                                        <TextBox Text="{Binding End, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MetadataTextBoxStyle}" Margin="0" FontFamily="Consolas" FontSize="13" Padding="8,6" AutomationProperties.Name="{Binding Label, StringFormat={}{0} end time}" />
+                                                                        <Button Content="Use current time" Command="{Binding UseEndCommand}" Style="{StaticResource SecondaryButtonStyle}" FontSize="11" Padding="6,5" Margin="0,5,0,0"
+                                                                                AutomationProperties.Name="{Binding Label, StringFormat=Use current time for {0} end}" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <Button Content="+ Add intro" Command="{Binding AddIntroCommand}" Style="{StaticResource SecondaryButtonStyle}" FontSize="12" Padding="12,7" />
+                                                <Button Content="+ Add outro" Command="{Binding AddOutroCommand}" Style="{StaticResource SecondaryButtonStyle}" FontSize="12" Padding="12,7" Margin="8,0,0,0" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Message}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" />
+                                        <Button Content="Save timings" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"
+                                                IsEnabled="{Binding CanEdit}" HorizontalAlignment="Right" Padding="16,9" Margin="0,12,0,0" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
                         <ComboBox x:Name="AspectRatioSelector" ItemsSource="{Binding AspectRatioChoices}" SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
                                   Tag="{Binding SelectedAspectRatio.Label}" DisplayMemberPath="Label" Width="90" Margin="4,0,8,0" Style="{StaticResource PlayerComboStyle}"
                                   IsEnabled="{Binding CanAdjustPicture}" AutomationProperties.Name="Video aspect ratio" ToolTip="Video aspect ratio" />

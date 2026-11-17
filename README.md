@@ -117,6 +117,10 @@ Use **Subtitles** to select an embedded track or **Off**. **Load subtitles…** 
 
 ### Skip intros, recaps, credits, and play the next title
 
+While watching, choose **Intro / Outro** beside Audio and Subtitles to add or edit this video's skip ranges. Type start/end times or click **Use current time**, then **Save timings**. Outro ranges can end at `end`; separate ranges preserve scenes between credits. Remove a range to disable it, and save. Changes apply immediately and are remembered for future watches in `%LOCALAPPDATA%\MyCinema\Data\SkipTimings`, even when the video is on a read-only drive. Saved edits override intro/outro text-file defaults for this video; recaps remain unchanged.
+
+Enable **Auto-skip intro / outro** beside Lock controls to skip marked intros automatically. At a marked outro, the next available episode starts and its marked intro is skipped too. If there is no next episode, the player skips to the outro range's end. The toggle stays active across episodes, including with controls locked, and resets to off whenever MyCinema restarts. It waits while playback is paused or the timing editor is open.
+
 Place a UTF-8 text file beside a video, with the same basename and `.skip.txt` suffix:
 
 ```text

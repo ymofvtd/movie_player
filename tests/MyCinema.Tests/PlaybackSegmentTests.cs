@@ -82,5 +82,44 @@ public sealed class PlaybackSegmentTests : IDisposable
     public void ButtonsOnlyUseTheActualSegmentAndKnownValidRuntime(long position, long duration, bool expected) =>
         Assert.Equal(expected, new PlaybackSegment(PlaybackSegmentKind.Intro, 10_000, 45_000).Contains(position, duration));
 
+    [Fact]
+    public async Task SavedTimingsOverrideSidecarsSurviveRestartAndLeaveMediaAndRecapsAlone()
+    {
+        var video = Write("episode.mkv", "video unchanged");
+        var sidecar = Write("episode.skip.txt", "intro=00:00-01:30\nrecap=00:00-00:10\noutro=40:00-end");
+        var paths = new ApplicationPaths(Path.Combine(_directory, "appdata"));
+        var service = new PlaybackSegmentService(paths);
+        PlaybackSegment[] edited = [new(PlaybackSegmentKind.Intro, 10_250, 80_750),
+            new(PlaybackSegmentKind.Outro, 2_400_000, 2_460_000), new(PlaybackSegmentKind.Outro, 2_500_000, long.MaxValue)];
+        await service.SaveAsync(video, edited);
+        var data = await new PlaybackSegmentService(paths).LoadAsync(video.ToUpperInvariant());
+        Assert.Null(data.Warning);
+        Assert.Equal(edited, data.Segments.Where(s => s.Kind != PlaybackSegmentKind.Recap));
+        Assert.Contains(data.Segments, s => s.Kind == PlaybackSegmentKind.Recap);
+        Assert.Equal("video unchanged", File.ReadAllText(video));
+        Assert.Equal("intro=00:00-01:30\nrecap=00:00-00:10\noutro=40:00-end", File.ReadAllText(sidecar));
+        await service.SaveAsync(video, []);
+        data = await new PlaybackSegmentService(paths).LoadAsync(video);
+        Assert.Equal(PlaybackSegmentKind.Recap, Assert.Single(data.Segments).Kind);
+        Assert.Empty(Directory.GetFiles(Path.Combine(paths.DataDirectory, "SkipTimings"), "*.tmp"));
+    }
+
+    [Fact]
+    public async Task CanceledOrInvalidSaveKeepsPreviousTimingsAndCorruptSavedFilesFallBackSafely()
+    {
+        var video = Write("episode.mkv", "video");
+        Write("episode.skip.txt", "intro=00:00-00:30");
+        var paths = new ApplicationPaths(Path.Combine(_directory, "appdata"));
+        var service = new PlaybackSegmentService(paths);
+        await service.SaveAsync(video, [new(PlaybackSegmentKind.Intro, 10_000, 45_000)]);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(video, [new(PlaybackSegmentKind.Intro, 10, 5)]));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SaveAsync(video, [], new CancellationToken(true)));
+        Assert.Equal(10_000, Assert.Single((await service.LoadAsync(video)).Segments).StartMs);
+        File.WriteAllText(Assert.Single(Directory.GetFiles(Path.Combine(paths.DataDirectory, "SkipTimings"))), "broken json");
+        var data = await service.LoadAsync(video);
+        Assert.NotNull(data.Warning);
+        Assert.Equal(0, Assert.Single(data.Segments).StartMs);
+    }
+
     public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 }

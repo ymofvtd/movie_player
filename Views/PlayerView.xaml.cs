@@ -68,6 +68,7 @@ public partial class PlayerView : UserControl
 
     private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
+        if (!IsVisible && _viewModel is not null) _viewModel.IsTimingEditorOpen = false;
         // The controls have a separate presentation source; keep page visibility explicit.
         PlayerOverlay.Visibility = IsVisible ? Visibility.Visible : Visibility.Collapsed;
         if (IsVisible && IsLoaded) { _viewModel?.NotifyInteraction(); _idleTimer.Start(); }
@@ -145,12 +146,29 @@ public partial class PlayerView : UserControl
     }
 
     private void OnLoadSubtitleClick(object sender, RoutedEventArgs e) => SubtitleSelector.IsDropDownOpen = false;
+    private void OnTimingEditorOpened(object? sender, EventArgs e)
+    {
+        if (TimingEditorPopup.Child is UIElement child)
+            child.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+    }
+    private void OnTimingEditorClosed(object? sender, EventArgs e)
+    {
+        if (_viewModel is not null) _viewModel.IsTimingEditorOpen = false;
+        if (IsLoaded && IsVisible) PlayerOverlay.Focus();
+    }
+    private void OnTimingEditorKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (_viewModel is not null) _viewModel.IsTimingEditorOpen = false;
+        e.Handled = true;
+    }
     private void OnSeekStarted(object? sender, EventArgs e) => _viewModel?.BeginSeek();
     private void OnSeekCompleted(object? sender, EventArgs e) => _viewModel?.CommitSeek();
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _idleTimer.Stop();
+        if (_viewModel is not null) _viewModel.IsTimingEditorOpen = false;
         if (_viewModel is not null)
         {
             _viewModel.Playback.Changed -= OnPlaybackChanged;

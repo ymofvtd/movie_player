@@ -103,6 +103,8 @@ public partial class MainWindow : Window
                 player.NextEpisodeCommand.ExecutionTask ?? Task.CompletedTask,
                 player.NextUpCommand.ExecutionTask ?? Task.CompletedTask,
                 player.ReloadCommand.ExecutionTask ?? Task.CompletedTask,
+                player.EditTimingsCommand.ExecutionTask ?? Task.CompletedTask,
+                player.TimingEditor?.SaveCommand.ExecutionTask ?? Task.CompletedTask,
                 player.Sidebar?.ToggleCommand.ExecutionTask ?? Task.CompletedTask,
                 player.PlayPauseCommand.ExecutionTask ?? Task.CompletedTask,
                 player.StopCommand.ExecutionTask ?? Task.CompletedTask,

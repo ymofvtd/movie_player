@@ -374,6 +374,41 @@ public sealed class EpisodeSidebarTests : IDisposable
         Assert.False(Player.NextUpCommand.CanExecute(null));
     }
 
+    [Fact]
+    public async Task AutomaticOutroStartsNextAvailableEpisodeFromBeginningAndSkipsItsIntroAcrossSeasons()
+    {
+        await SetupAsync();
+        var timings = _services!.GetRequiredService<IPlaybackSegmentService>();
+        foreach (var file in new[] { _first, _second, _third })
+            await timings.SaveAsync(file.FilePath, [new(PlaybackSegmentKind.Intro, 0, 10_000), new(PlaybackSegmentKind.Outro, 90_000, long.MaxValue)]);
+        await Progress.SaveAsync(new() { MediaFileId = _second.Id, PositionMs = 40_000, DurationMs = 100_000 });
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        Assert.False(Player.AutomaticallySkipTimings);
+        Player.AutomaticallySkipTimings = true;
+        await WaitForPosition(_first, 10_000);
+        _playback.Position(90_000);
+        await WaitForPosition(_second, 10_000);
+        Assert.Equal(0, _dialogs.Prompts);
+        Assert.True(Player.AutomaticallySkipTimings);
+        _playback.Position(90_000);
+        await WaitForPosition(_third, 10_000);
+        _playback.Position(90_000);
+        await WaitForPosition(_third, 100_000);
+        Player.AutomaticallySkipTimings = false;
+        _playback.Position(5_000);
+        Assert.Equal(5_000, _playback.Current.PositionMs);
+        _services!.Dispose();
+        _services = CreateServices();
+        Assert.False(Player.AutomaticallySkipTimings);
+
+        async Task WaitForPosition(MediaFile file, long position)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (_playback.Current.FilePath != file.FilePath || _playback.Current.PositionMs != position || Player.NextUpCommand.IsRunning)
+                await Task.Delay(10, timeout.Token);
+        }
+    }
+
     private sealed class ImmediateDispatcher : IUiDispatcher
     {
         public void Post(Action action) => action();

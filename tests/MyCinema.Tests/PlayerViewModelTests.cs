@@ -216,13 +216,87 @@ public sealed class PlayerViewModelTests
 
     private sealed class FixedSegments : IPlaybackSegmentService
     {
+        public Task SaveAsync(string path, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<PlaybackSegmentData> LoadAsync(string path, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PlaybackSegmentData([new(PlaybackSegmentKind.Intro, 10_000, 45_000),
                 new(PlaybackSegmentKind.Outro, 90_000, 98_000)]));
     }
 
+    [Fact]
+    public async Task AutomaticSkippingDefaultsOffWorksWithLockedControlsAndDoesNotRepeatPendingSeeks()
+    {
+        var playback = new FakePlayback();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), segmentService: new FixedSegments());
+        Assert.False(player.AutomaticallySkipTimings);
+        playback.Emit(new(PlaybackState.Playing, "episode.mkv", 15_000, 100_000, true, Revision: 1));
+        Assert.Null(playback.LastSeek);
+        player.AutomaticallySkipTimings = true;
+        Assert.Equal(45_000, playback.LastSeek);
+        Assert.Equal(1, playback.SeekCount);
+        playback.Emit(playback.Current with { PositionMs = 16_000, Revision = 2 });
+        Assert.Equal(1, playback.SeekCount);
+        playback.Emit(playback.Current with { PositionMs = 50_000, Revision = 3 });
+        player.IsFullscreen = true;
+        player.ToggleControlsLockCommand.Execute(null);
+        playback.Emit(playback.Current with { PositionMs = 90_000, Revision = 4 });
+        Assert.True(player.AreControlsLocked);
+        Assert.Equal(98_000, playback.LastSeek);
+        player.AutomaticallySkipTimings = false;
+        playback.Emit(playback.Current with { PositionMs = 15_000, Revision = 5 });
+        Assert.Equal(98_000, playback.LastSeek);
+        player.AutomaticallySkipTimings = true;
+        Assert.Equal(45_000, playback.LastSeek);
+        using var restarted = new PlayerViewModel(new FakePlayback(), new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(), segmentService: new FixedSegments());
+        Assert.False(restarted.AutomaticallySkipTimings);
+        player.AutomaticallySkipTimings = false;
+        player.ToggleControlsLockCommand.Execute(null);
+        await player.EditTimingsCommand.ExecuteAsync(null);
+        Assert.True(player.IsTimingEditorOpen);
+        var count = playback.SeekCount;
+        player.AutomaticallySkipTimings = true;
+        playback.Emit(playback.Current with { Revision = 6 });
+        Assert.Equal(count, playback.SeekCount);
+        player.CloseTimingEditorCommand.Execute(null);
+        playback.Emit(playback.Current with { Revision = 7 });
+        Assert.Equal(count + 1, playback.SeekCount);
+    }
+
+    [Fact]
+    public async Task EditingTimingsUpdatesSkipButtonsImmediatelyAndKeepsControlsVisibleWhilePlaying()
+    {
+        var playback = new FakePlayback();
+        var clock = new ManualClock();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(),
+            timeProvider: clock, segmentService: new FixedSegments());
+        Assert.False(player.EditTimingsCommand.CanExecute(null));
+        playback.Emit(new(PlaybackState.Playing, "episode.mkv", 15_000, 100_000, true, Revision: 1));
+        await player.EditTimingsCommand.ExecuteAsync(null);
+        Assert.True(player.IsTimingEditorOpen);
+        Assert.Equal(2, player.TimingEditor!.Ranges.Count);
+        Assert.False(playback.Paused);
+        clock.Advance(10);
+        player.UpdateControlsVisibility(false);
+        Assert.True(player.AreControlsVisible);
+        player.TimingEditor.Ranges[0].End = "0:12";
+        await player.TimingEditor.SaveCommand.ExecuteAsync(null);
+        Assert.False(player.ShowSkipIntro);
+        player.CloseTimingEditorCommand.Execute(null);
+        await player.EditTimingsCommand.ExecuteAsync(null);
+        Assert.Equal("0:12", player.TimingEditor.Ranges[0].End);
+        var previousEditor = player.TimingEditor;
+        playback.Emit(new(PlaybackState.Playing, "other.mkv", 15_000, 100_000, true, Revision: 2));
+        Assert.False(player.IsTimingEditorOpen);
+        previousEditor.Ranges[0].End = "0:11";
+        await previousEditor.SaveCommand.ExecuteAsync(null);
+        Assert.True(player.ShowSkipIntro); // Saving the previous editor cannot change the new video's timings.
+    }
+
     private sealed class DelayedSegments : IPlaybackSegmentService
     {
+        public Task SaveAsync(string path, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public TaskCompletionSource<PlaybackSegmentData> First { get; } = new();
         public Task<PlaybackSegmentData> LoadAsync(string path, CancellationToken cancellationToken = default) =>
             path == "first.mkv" ? First.Task : Task.FromResult(PlaybackSegmentData.Empty);
@@ -386,6 +460,7 @@ public sealed class PlayerViewModelTests
         public bool Initialized { get; private set; }
         public string? OpenedPath { get; private set; }
         public long? LastSeek { get; private set; }
+        public int SeekCount { get; private set; }
         public bool Paused { get; private set; }
         public bool Muted { get; private set; }
         public int Volume { get; private set; }
@@ -408,7 +483,7 @@ public sealed class PlayerViewModelTests
         public Task ReloadAsync() { ReloadedSnapshot = Current; return ReloadGate?.Task ?? Task.CompletedTask; }
         public void Pause() => Paused = true;
         public Task StopAsync() => Task.CompletedTask;
-        public void Seek(long positionMs) => LastSeek = positionMs;
+        public void Seek(long positionMs) { LastSeek = positionMs; SeekCount++; }
         public void SetVolume(int volume) => Volume = volume;
         public void SetMute(bool muted) => Muted = muted;
         public void Dispose() { }

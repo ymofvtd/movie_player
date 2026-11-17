@@ -1,19 +1,58 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using MyCinema.Core.Interfaces;
 using MyCinema.Core.Playback;
+using MyCinema.Infrastructure.Database;
 
 namespace MyCinema.Infrastructure.Services;
 
-/// <summary>Reads small, local sidecars on a worker. Never modifies media or uses the network.</summary>
+/// <summary>Reads local sidecars and keeps edited intro/outro timings in application data.</summary>
 public sealed class PlaybackSegmentService : IPlaybackSegmentService
 {
     private const int MaximumBytes = 64 * 1024;
+    private readonly IApplicationPaths _paths;
+
+    public PlaybackSegmentService() : this(new ApplicationPaths()) { }
+    public PlaybackSegmentService(IApplicationPaths paths) => _paths = paths;
 
     public Task<PlaybackSegmentData> LoadAsync(string filePath, CancellationToken cancellationToken = default) =>
         Task.Run(() => Load(filePath, cancellationToken), cancellationToken);
 
-    private static PlaybackSegmentData Load(string filePath, CancellationToken cancellationToken)
+    public async Task SaveAsync(string filePath, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default)
+    {
+        // Only intro/outro are edited here. Recaps continue to come from existing sidecars.
+        if (segments.Any(s => s.Kind is not (PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro) ||
+            s.StartMs < 0 || s.EndMs <= s.StartMs || s.StartMs == long.MaxValue ||
+            s.Kind == PlaybackSegmentKind.Intro && s.EndMs == long.MaxValue))
+            throw new ArgumentException("Intro/outro timings must have valid start and end times.", nameof(segments));
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(segments);
+        if (bytes.Length > MaximumBytes) throw new ArgumentException("There are too many timing ranges.", nameof(segments));
+        var path = SavedPath(filePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private string SavedPath(string filePath)
+    {
+        var canonical = Sql.PathKey(filePath);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return Path.Combine(_paths.DataDirectory, "SkipTimings", hash + ".json");
+    }
+
+    private PlaybackSegmentData Load(string filePath, CancellationToken cancellationToken)
     {
         var result = new Dictionary<PlaybackSegmentKind, List<PlaybackSegment>>();
         var warnings = false;
@@ -40,8 +79,29 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
                 warnings = true;
             }
         }
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var path = SavedPath(filePath);
+            if (File.Exists(path))
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                if (stream.Length > MaximumBytes) throw new JsonException("Timing file is too large.");
+                var saved = JsonSerializer.Deserialize<PlaybackSegment[]>(stream);
+                if (saved is null || saved.Any(s => s is null || s.Kind is not (PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro) ||
+                    s.StartMs < 0 || s.EndMs <= s.StartMs || s.StartMs == long.MaxValue ||
+                    s.Kind == PlaybackSegmentKind.Intro && s.EndMs == long.MaxValue))
+                    throw new JsonException("Invalid saved timings.");
+                foreach (var kind in new[] { PlaybackSegmentKind.Intro, PlaybackSegmentKind.Outro })
+                    result[kind] = saved.Where(s => s.Kind == kind).ToList();
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            warnings = true;
+        }
         return new(result.Values.SelectMany(s => s).OrderBy(s => s.StartMs).ToArray(),
-            warnings ? "Some skip timings could not be read. Check this video's timing text files." : null);
+            warnings ? "Some skip timings could not be read. You can edit intro/outro timings in the player." : null);
     }
 
     private static IEnumerable<(string Path, PlaybackSegmentKind? DefaultKind)> Candidates(string video)

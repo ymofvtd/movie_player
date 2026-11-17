@@ -31,6 +31,10 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     private PlaybackSegmentData _segments = PlaybackSegmentData.Empty;
     private CancellationTokenSource? _segmentCancellation;
     private Task _segmentLoadTask = Task.CompletedTask;
+    private PlaybackTimingEditorViewModel? _timingEditor;
+    private bool _isTimingEditorOpen;
+    private bool _automaticallySkipTimings;
+    private PlaybackSegment? _automaticSegment;
 
     public PlayerViewModel(IPlaybackService playback, IFileDialogService dialogs,
         INavigationService navigation, IUiDispatcher dispatcher, WatchHistoryService? history = null,
@@ -59,10 +63,12 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             episode => !IsChangingMedia && !IsOpening && episode is { CanPlay: true, IsActive: false } && Sidebar?.Contains(episode) == true);
         PreviousEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(-1), () => CanMoveEpisode(-1));
         NextEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1), () => CanMoveEpisode(1));
-        NextUpCommand = new AsyncRelayCommand(PlayNextUpAsync, () => CanPlayNextUp);
+        NextUpCommand = new AsyncRelayCommand(() => PlayNextUpAsync(AutomaticallySkipTimings), () => CanPlayNextUp);
         ReloadCommand = new AsyncRelayCommand(ReloadAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
         SkipIntroCommand = new RelayCommand(() => Skip(ActiveOpening), () => ShowSkipIntro);
         SkipCreditsCommand = new RelayCommand(() => Skip(ActiveOutro), () => ShowSkipCredits);
+        EditTimingsCommand = new AsyncRelayCommand(EditTimingsAsync, () => CanEditTimings);
+        CloseTimingEditorCommand = new RelayCommand(() => IsTimingEditorOpen = false);
         OpenFileCommand.PropertyChanged += OnOpenCommandChanged;
         OpenLibraryFileCommand.PropertyChanged += OnOpenCommandChanged;
         StartOverFileCommand.PropertyChanged += OnOpenCommandChanged;
@@ -123,6 +129,28 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IAsyncRelayCommand ReloadCommand { get; }
     public IRelayCommand SkipIntroCommand { get; }
     public IRelayCommand SkipCreditsCommand { get; }
+    public IAsyncRelayCommand EditTimingsCommand { get; }
+    public IRelayCommand CloseTimingEditorCommand { get; }
+    public bool CanEditTimings => _segmentService is not null && HasMedia && !IsOpening && !IsChangingMedia &&
+        !HasError && !AreControlsLocked && _snapshot.DurationMs > 0;
+    public PlaybackTimingEditorViewModel? TimingEditor { get => _timingEditor; private set => SetProperty(ref _timingEditor, value); }
+    public bool IsTimingEditorOpen
+    {
+        get => _isTimingEditorOpen;
+        set { if (SetProperty(ref _isTimingEditorOpen, value)) NotifyInteraction(); }
+    }
+    // Deliberately session-only: every application launch starts with automatic skipping off.
+    public bool AutomaticallySkipTimings
+    {
+        get => _automaticallySkipTimings;
+        set
+        {
+            if (!SetProperty(ref _automaticallySkipTimings, value)) return;
+            _automaticSegment = null;
+            NotifyInteraction();
+            UpdateAutomaticSkipping();
+        }
+    }
     private bool CanShowSegment => !_isSeeking && !AreControlsLocked && !HasError && CanSeek &&
         !IsChangingMedia && _snapshot.State is PlaybackState.Playing or PlaybackState.Paused;
     private PlaybackSegment? ActiveOpening => _segments.Segments.FirstOrDefault(s =>
@@ -236,9 +264,10 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         private set
         {
             if (!SetProperty(ref _controlsLocked, value)) return;
-            if (value) AreControlsVisible = false;
+            if (value) { AreControlsVisible = false; IsTimingEditorOpen = false; }
             else NotifyInteraction();
             ToggleControlsLockCommand.NotifyCanExecuteChanged();
+            EditTimingsCommand.NotifyCanExecuteChanged();
             NotifySegmentCommands();
         }
     }
@@ -259,7 +288,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public void UpdateControlsVisibility(bool interactingWithControls)
     {
         if (AreControlsLocked) return;
-        if (!IsPlaying || HasError || _isSeeking || interactingWithControls) NotifyInteraction();
+        if (!IsPlaying || HasError || _isSeeking || IsTimingEditorOpen || interactingWithControls) NotifyInteraction();
         else if (_timeProvider.GetElapsedTime(_lastInteraction) >= TimeSpan.FromSeconds(3)) AreControlsVisible = false;
     }
 
@@ -391,12 +420,12 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
                 .OrderByDescending(f => catalog.Progress.GetValueOrDefault(f.Id)?.LastPlayedUtc ?? DateTimeOffset.MinValue)).ToArray();
     }
 
-    private async Task PlayNextUpAsync()
+    private async Task PlayNextUpAsync(bool startOver)
     {
         foreach (var file in NextUpFiles())
         {
             if (!await Task.Run(() => File.Exists(file.FilePath))) continue;
-            await OpenPathAsync(file.FilePath);
+            await OpenPathAsync(file.FilePath, startOver);
             return;
         }
         EpisodeNavigationMessage = "The next title is unavailable. Reconnect the library drive or rescan in Settings.";
@@ -425,11 +454,35 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
 
     private void StartSegmentLoad()
     {
+        _automaticSegment = null;
+        IsTimingEditorOpen = false;
+        TimingEditor = null;
         _segmentCancellation?.Cancel();
         _segmentCancellation?.Dispose();
         _segments = PlaybackSegmentData.Empty;
         _segmentCancellation = new();
         _segmentLoadTask = LoadSegmentsAsync(FilePath, _segmentCancellation.Token);
+    }
+
+    private async Task EditTimingsAsync()
+    {
+        if (IsTimingEditorOpen) { IsTimingEditorOpen = false; return; }
+        var session = _snapshot.SessionId;
+        var path = FilePath;
+        await _segmentLoadTask;
+        if (_disposed || !CanEditTimings || session != _snapshot.SessionId || path != FilePath || path is null) return;
+        TimingEditor = new(path, _snapshot.DurationMs, _segments, _segmentService!,
+            () => _snapshot.SessionId == session && FilePath == path ? _snapshot.PositionMs : 0,
+            saved =>
+            {
+                if (_disposed || _snapshot.SessionId != session || FilePath != path) return;
+                _segments = new(_segments.Segments.Where(s => s.Kind == PlaybackSegmentKind.Recap).Concat(saved).OrderBy(s => s.StartMs).ToArray());
+                OnPropertyChanged(nameof(TimingWarning));
+                OnPropertyChanged(nameof(HasTimingWarning));
+                NotifySegmentCommands();
+                UpdateAutomaticSkipping();
+            });
+        IsTimingEditorOpen = true;
     }
 
     private async Task LoadSegmentsAsync(string? path, CancellationToken cancellationToken)
@@ -445,6 +498,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
                 OnPropertyChanged(nameof(TimingWarning));
                 OnPropertyChanged(nameof(HasTimingWarning));
                 NotifySegmentCommands();
+                UpdateAutomaticSkipping();
             });
         }
         catch (OperationCanceledException) { }
@@ -469,8 +523,10 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             OpenFileCommand.NotifyCanExecuteChanged();
             OpenLibraryFileCommand.NotifyCanExecuteChanged();
             StartOverFileCommand.NotifyCanExecuteChanged();
+            if (!CanEditTimings) IsTimingEditorOpen = false;
             OnPropertyChanged(string.Empty);
             NotifyPlaybackCommands();
+            UpdateAutomaticSkipping();
         });
     }
 
@@ -506,6 +562,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             !string.Equals(_snapshot.FilePath, e.Snapshot.FilePath, StringComparison.OrdinalIgnoreCase);
         _snapshot = e.Snapshot;
         if (changedMedia) StartSegmentLoad();
+        if (!CanEditTimings) IsTimingEditorOpen = false;
         if (!IsPlaying || HasError) AreControlsLocked = false;
         ToggleControlsLockCommand.NotifyCanExecuteChanged();
         Sidebar?.UpdatePlayback(_snapshot);
@@ -517,7 +574,23 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         // A snapshot is one coherent UI update; native callbacks never touch WPF objects.
         OnPropertyChanged(string.Empty);
         NotifyPlaybackCommands();
+        UpdateAutomaticSkipping();
     });
+
+    private void UpdateAutomaticSkipping()
+    {
+        if (_disposed || !AutomaticallySkipTimings || _isSeeking || HasError || !CanSeek ||
+            _snapshot.State != PlaybackState.Playing || IsTimingEditorOpen) return;
+        var segment = _segments.Segments.FirstOrDefault(s => s.Kind is PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro &&
+            s.Contains(_snapshot.PositionMs, _snapshot.DurationMs));
+        if (segment is null) { _automaticSegment = null; return; }
+        if (segment == _automaticSegment) return;
+        _automaticSegment = segment; // Native seek and next-episode callbacks may arrive more than once.
+        if (segment.Kind == PlaybackSegmentKind.Outro && Sidebar?.HasShow == true && NextUpCommand.CanExecute(null))
+            NextUpCommand.Execute(null);
+        else
+            Playback.Seek(segment.EndAt(_snapshot.DurationMs));
+    }
 
     private void NotifyPlaybackCommands()
     {
@@ -534,6 +607,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         SelectSpeedCommand.NotifyCanExecuteChanged();
         SelectAspectRatioCommand.NotifyCanExecuteChanged();
         SubtitleMenuCommand.NotifyCanExecuteChanged();
+        EditTimingsCommand.NotifyCanExecuteChanged();
         NotifyEpisodeCommands();
     }
 
