@@ -145,7 +145,11 @@ public partial class PlayerView : UserControl
         SubtitleSelector.IsDropDownOpen = true;
     }
 
-    private void OnLoadSubtitleClick(object sender, RoutedEventArgs e) => SubtitleSelector.IsDropDownOpen = false;
+    private void OnLoadSubtitleClick(object sender, RoutedEventArgs e)
+    {
+        SubtitleSelector.IsDropDownOpen = false;
+        SecondarySubtitleSelector.IsDropDownOpen = false;
+    }
     private void OnTimingEditorOpened(object? sender, EventArgs e)
     {
         if (TimingEditorPopup.Child is UIElement child)

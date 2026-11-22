@@ -72,6 +72,9 @@
                                     <Button x:Name="LoadSubtitleMenuItem" Content="Load subtitle file…" Command="{Binding LoadSubtitleCommand}"
                                             Click="OnLoadSubtitleClick" Style="{StaticResource PlayerButtonStyle}" FontSize="12" Padding="10,8" Margin="0,4,0,0" Visibility="Collapsed"
                                             AutomationProperties.Name="Load subtitle file" />
+                                    <Button x:Name="LoadSecondarySubtitleMenuItem" Content="Load secondary subtitle file…" Command="{Binding LoadSecondarySubtitleCommand}"
+                                            Click="OnLoadSubtitleClick" Style="{StaticResource PlayerButtonStyle}" FontSize="12" Padding="10,8" Margin="0,4,0,0" Visibility="Collapsed"
+                                            AutomationProperties.Name="Load secondary subtitle file" />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -80,6 +83,7 @@
                         <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="MenuFocus" Property="BorderBrush" Value="{DynamicResource FocusBrush}" /></Trigger>
                         <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger>
                         <Trigger Property="AutomationProperties.Name" Value="Subtitle track"><Setter TargetName="LoadSubtitleMenuItem" Property="Visibility" Value="Visible" /></Trigger>
+                        <Trigger Property="AutomationProperties.Name" Value="Secondary subtitle track"><Setter TargetName="LoadSecondarySubtitleMenuItem" Property="Visibility" Value="Visible" /></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate></Setter.Value></Setter>
             </Style>
@@ -98,6 +102,17 @@
                     </Grid>
                     <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger></ControlTemplate.Triggers>
                 </ControlTemplate></Setter.Value></Setter>
+            </Style>
+            <Style x:Key="SubtitleTextStyle" TargetType="TextBlock">
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="TextAlignment" Value="Center" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="Background" Value="#B8000000" />
+                <Setter Property="Padding" Value="9,2" />
+                <Style.Triggers>
+                    <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
+                </Style.Triggers>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>
@@ -140,6 +155,12 @@
                 </StackPanel>
             </DockPanel>
         </Border>
+        <StackPanel Grid.Row="1" Margin="28,0,28,16" VerticalAlignment="Bottom" IsHitTestVisible="False">
+            <TextBlock x:Name="PrimarySubtitleText" Text="{Binding PrimarySubtitleText}" FontSize="{Binding PrimarySubtitleFontSize, FallbackValue=44}"
+                       Style="{StaticResource SubtitleTextStyle}" />
+            <TextBlock x:Name="SecondarySubtitleText" Text="{Binding SecondarySubtitleText}" FontSize="{Binding SecondarySubtitleFontSize, FallbackValue=36}" Margin="0,2,0,0"
+                       Style="{StaticResource SubtitleTextStyle}" />
+        </StackPanel>
         <Grid Grid.Row="1" Visibility="{Binding AreControlsVisible, Converter={StaticResource BooleanToVisibility}}">
             <views:EpisodeSidebar x:Name="EpisodePanel" HorizontalAlignment="Right"
                                   Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}" />
@@ -218,20 +239,26 @@
                                 <Style.Triggers><DataTrigger Binding="{Binding IsMuted}" Value="True"><Setter Property="Content" Value="&#xE74F;" /></DataTrigger></Style.Triggers>
                             </Style></Button.Style>
                         </Button>
-                        <views:DragSlider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" Width="80" Margin="4,0,12,0"
+                        <views:DragSlider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay}" Width="64" Margin="4,0,8,0"
                                           Style="{StaticResource PlayerSliderStyle}" AutomationProperties.Name="Volume" ToolTip="{Binding Volume, StringFormat=Volume: {0}%}" />
                     </StackPanel>
                     <StackPanel x:Name="PlaybackOptionsPanel" Grid.Column="2" Orientation="Horizontal" AutomationProperties.Name="Playback options">
                         <ComboBox x:Name="AudioSelector" ItemsSource="{Binding AudioTracks}" SelectedItem="{Binding SelectedAudioTrack, Mode=TwoWay}"
-                                  Tag="Audio" Width="80" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding HasAudioTracks}"
+                                  Tag="Audio" Width="72" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding HasAudioTracks}"
                                   AutomationProperties.Name="Audio language">
                             <ComboBox.ToolTip><StackPanel><TextBlock Text="Audio language" /><TextBlock Text="{Binding SelectedAudioTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
                             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
                         </ComboBox>
                         <ComboBox x:Name="SubtitleSelector" ItemsSource="{Binding SubtitleTracks}" SelectedItem="{Binding SelectedSubtitleTrack, Mode=TwoWay}"
-                                  Tag="Subtitles" Width="100" Margin="4,0,0,0" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding CanSelectTracks}"
+                                  Tag="Subtitles" Width="86" Margin="4,0,0,0" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding CanSelectTracks}"
                                   AutomationProperties.Name="Subtitle track">
                             <ComboBox.ToolTip><StackPanel><TextBlock Text="Subtitles (S)" /><TextBlock Text="{Binding SelectedSubtitleTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox x:Name="SecondarySubtitleSelector" ItemsSource="{Binding SecondarySubtitleTracks}" SelectedItem="{Binding SelectedSecondarySubtitleTrack, Mode=TwoWay}"
+                                  Tag="2nd subs" Width="83" Margin="4,0,0,0" Style="{StaticResource PlayerComboStyle}" IsEnabled="{Binding CanSelectTracks}"
+                                  AutomationProperties.Name="Secondary subtitle track">
+                            <ComboBox.ToolTip><StackPanel><TextBlock Text="Secondary subtitles" /><TextBlock Text="{Binding SelectedSecondarySubtitleTrack.Label}" FontSize="11" /></StackPanel></ComboBox.ToolTip>
                             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="350" /></DataTemplate></ComboBox.ItemTemplate>
                         </ComboBox>
                         <Button x:Name="TimingEditorButton" Content="Intro / Outro" Command="{Binding EditTimingsCommand}"
@@ -251,7 +278,7 @@
                                                 Style="{StaticResource PlayerButtonStyle}" Padding="9,5" FontSize="12" AutomationProperties.Name="Close timing editor" />
                                         <TextBlock Text="Intro / Outro" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     </DockPanel>
-                                    <TextBlock Text="Set skip ranges for this video while you watch." Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,5" />
+                                    <TextBlock Text="Timings save in a .skip.txt file beside this video." Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,5" />
                                     <TextBlock Text="Use m:ss or h:mm:ss. An outro can end at ‘end’." Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" Margin="0,0,0,12" />
                                     <StackPanel DataContext="{Binding TimingEditor}">
                                         <StackPanel IsEnabled="{Binding CanEdit}">
@@ -300,7 +327,7 @@
                             </Border>
                         </Popup>
                         <ComboBox x:Name="AspectRatioSelector" ItemsSource="{Binding AspectRatioChoices}" SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}"
-                                  Tag="{Binding SelectedAspectRatio.Label}" DisplayMemberPath="Label" Width="90" Margin="4,0,8,0" Style="{StaticResource PlayerComboStyle}"
+                                  Tag="{Binding SelectedAspectRatio.Label}" DisplayMemberPath="Label" Width="82" Margin="4,0,8,0" Style="{StaticResource PlayerComboStyle}"
                                   IsEnabled="{Binding CanAdjustPicture}" AutomationProperties.Name="Video aspect ratio" ToolTip="Video aspect ratio" />
                         <Button Command="{Binding FullscreenCommand}" ToolTip="Toggle fullscreen (F); Escape to exit" AutomationProperties.Name="{Binding FullscreenLabel}">
                             <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PlayerIconButtonStyle}">

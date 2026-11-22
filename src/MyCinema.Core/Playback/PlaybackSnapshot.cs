@@ -15,8 +15,11 @@ public sealed record PlaybackSnapshot(
     public long SessionId { get; init; }
     public IReadOnlyList<PlaybackTrack> AudioTracks { get; init; } = [];
     public IReadOnlyList<PlaybackTrack> SubtitleTracks { get; init; } = [];
+    public IReadOnlyList<PlaybackTrack> SecondarySubtitleTracks { get; init; } = [];
     public int AudioTrackId { get; init; } = -1;
     public int SubtitleTrackId { get; init; } = -1;
+    public int SecondarySubtitleTrackId { get; init; } = -1;
+    public SubtitleOverlay? SubtitleOverlay { get; init; }
     public double Speed { get; init; } = 1;
     public double VideoFrameDurationMs { get; init; }
     public VideoAspectRatio AspectRatio { get; init; }

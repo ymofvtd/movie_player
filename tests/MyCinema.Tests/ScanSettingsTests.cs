@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MyCinema.Core.Interfaces;
 using MyCinema.Core.Models;
+using MyCinema.Core.Playback;
 using MyCinema.Core.Scanning;
 using MyCinema.Infrastructure.Services;
 using Person_Movie_Player.Services;
@@ -64,6 +65,39 @@ public sealed class ScanSettingsTests : IDisposable
         Assert.Contains("canceled", settings.ScanStatus);
         Assert.False(settings.CancelScanCommand.CanExecute(null));
         Assert.Equal("", settings.ScanPath);
+    }
+
+    [Fact]
+    public async Task PlaybackSettingsPersistAndPreserveExistingSettings()
+    {
+        var paths = new ApplicationPaths(_directory);
+        using (var services = new ServiceCollection().AddMyCinema().AddSingleton<IApplicationPaths>(paths).BuildServiceProvider())
+        {
+            var settings = services.GetRequiredService<ISettingsService>();
+            await settings.SaveAsync(new() { DefaultVolume = 37, EnableAnimations = false });
+            var editor = services.GetRequiredService<SettingsViewModel>();
+            await editor.InitializeAsync();
+            Assert.Equal(44, editor.PrimarySubtitleFontSize);
+            Assert.Equal(36, editor.SecondarySubtitleFontSize);
+            editor.PrimarySubtitleFontSize = 58;
+            editor.SecondarySubtitleFontSize = 46;
+            editor.FallbackAudioLanguage = "ja";
+            editor.PreferEnglishSubtitles = false;
+            await editor.SavePlaybackPreferencesCommand.ExecuteAsync(null);
+            Assert.Equal("Playback preferences saved.", editor.PlaybackPreferencesMessage);
+            Assert.Equal(58, services.GetRequiredService<PlaybackPreferencesState>().Current.PrimarySubtitleFontSize);
+        }
+
+        using var reopened = new ServiceCollection().AddMyCinema().AddSingleton<IApplicationPaths>(paths).BuildServiceProvider();
+        var saved = await reopened.GetRequiredService<ISettingsService>().LoadAsync();
+        Assert.False(saved.EnableAnimations);
+        Assert.Equal(37, saved.DefaultVolume);
+        var nextEditor = reopened.GetRequiredService<SettingsViewModel>();
+        await nextEditor.InitializeAsync();
+        Assert.Equal(58, nextEditor.PrimarySubtitleFontSize);
+        Assert.Equal(46, nextEditor.SecondarySubtitleFontSize);
+        Assert.Equal("ja", nextEditor.FallbackAudioLanguage);
+        Assert.False(nextEditor.PreferEnglishSubtitles);
     }
 
     private sealed class WaitingScanner : ILibraryScannerService

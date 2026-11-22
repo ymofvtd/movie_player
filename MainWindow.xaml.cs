@@ -111,6 +111,8 @@ public partial class MainWindow : Window
                 player.SelectAudioTrackCommand.ExecutionTask ?? Task.CompletedTask,
                 player.SelectSubtitleTrackCommand.ExecutionTask ?? Task.CompletedTask,
                 player.LoadSubtitleCommand.ExecutionTask ?? Task.CompletedTask,
+                player.SelectSecondarySubtitleTrackCommand.ExecutionTask ?? Task.CompletedTask,
+                player.LoadSecondarySubtitleCommand.ExecutionTask ?? Task.CompletedTask,
                 player.SelectSpeedCommand.ExecutionTask ?? Task.CompletedTask,
                 player.SelectAspectRatioCommand.ExecutionTask ?? Task.CompletedTask);
             player.Playback.Pause();

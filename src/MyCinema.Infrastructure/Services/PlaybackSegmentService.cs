@@ -9,11 +9,13 @@ using MyCinema.Infrastructure.Database;
 
 namespace MyCinema.Infrastructure.Services;
 
-/// <summary>Reads local sidecars and keeps edited intro/outro timings in application data.</summary>
+/// <summary>Reads local timing files and saves edits beside the video so they move with it.</summary>
 public sealed class PlaybackSegmentService : IPlaybackSegmentService
 {
     private const int MaximumBytes = 64 * 1024;
+    private const string SavedHeader = "# MyCinema saved intro/outro timings";
     private readonly IApplicationPaths _paths;
+    private readonly object _saveLock = new();
 
     public PlaybackSegmentService() : this(new ApplicationPaths()) { }
     public PlaybackSegmentService(IApplicationPaths paths) => _paths = paths;
@@ -21,21 +23,69 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
     public Task<PlaybackSegmentData> LoadAsync(string filePath, CancellationToken cancellationToken = default) =>
         Task.Run(() => Load(filePath, cancellationToken), cancellationToken);
 
-    public async Task SaveAsync(string filePath, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default)
+    public Task SaveAsync(string filePath, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default) =>
+        Task.Run(() => Save(filePath, segments, cancellationToken), cancellationToken);
+
+    // Only inspect videos that have an old app-data entry; ordinary startup never scans media folders.
+    public Task MigrateLegacyAsync(IEnumerable<string> filePaths, CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            foreach (var filePath in filePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(LegacyPath(filePath))) Load(filePath, cancellationToken);
+            }
+        }, cancellationToken);
+
+    private void Save(string filePath, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken, bool migrating = false)
     {
+        lock (_saveLock) SaveCore(filePath, segments, cancellationToken, migrating);
+    }
+
+    private static void SaveCore(string filePath, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken, bool migrating)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         // Only intro/outro are edited here. Recaps continue to come from existing sidecars.
         if (segments.Any(s => s.Kind is not (PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro) ||
             s.StartMs < 0 || s.EndMs <= s.StartMs || s.StartMs == long.MaxValue ||
             s.Kind == PlaybackSegmentKind.Intro && s.EndMs == long.MaxValue))
             throw new ArgumentException("Intro/outro timings must have valid start and end times.", nameof(segments));
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(segments);
-        if (bytes.Length > MaximumBytes) throw new ArgumentException("There are too many timing ranges.", nameof(segments));
-        var path = SavedPath(filePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var video = Path.GetFullPath(filePath);
+        if (!File.Exists(video)) throw new IOException("The video is unavailable. Reconnect its folder before saving timings.");
+        var path = video + ".skip.txt";
+        var previous = File.Exists(path) ? ReadTextFile(path) : "";
+        // A user may have saved new edits while the background migration was reading its backup.
+        if (migrating && previous.Split('\n').Any(line => line.Trim() == SavedHeader)) return;
+        var newline = previous.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lines = previous.Split('\n').Select(line => line.TrimEnd('\r')).Where(line =>
+        {
+            var text = line.Split('#', 2)[0].Trim();
+            var equals = text.IndexOf('=');
+            return line.Trim() != SavedHeader && (equals < 0 || ParseKind(text[..equals].Trim()) is not
+                (PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro));
+        }).ToList();
+        // Retain recap entries, provenance, comments, and unknown metadata in an existing sidecar.
+        while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        if (lines.Count > 0) lines.Add("");
+        lines.Add(SavedHeader);
+        foreach (var kind in new[] { PlaybackSegmentKind.Intro, PlaybackSegmentKind.Outro })
+        {
+            var ranges = segments.Where(s => s.Kind == kind).OrderBy(s => s.StartMs).ToArray();
+            var key = kind == PlaybackSegmentKind.Intro ? "intro" : "outro";
+            if (ranges.Length == 0) lines.Add(key + "=none");
+            foreach (var range in ranges)
+                lines.Add($"{key}={FormatTime(range.StartMs)}-{(range.EndMs == long.MaxValue ? "end" : FormatTime(range.EndMs))}");
+        }
+        var bytes = Encoding.UTF8.GetBytes(string.Join(newline, lines) + newline);
+        if (bytes.Length > MaximumBytes) throw new IOException("The timing file is too large to update safely.");
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            await File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, path, overwrite: true);
         }
@@ -45,7 +95,21 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
         }
     }
 
-    private string SavedPath(string filePath)
+    private static string FormatTime(long milliseconds) => string.Create(CultureInfo.InvariantCulture,
+        $"{milliseconds / 60_000}:{milliseconds / 1000 % 60:00}.{milliseconds % 1000:000}");
+
+    private static string ReadTextFile(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (stream.Length > MaximumBytes) throw new IOException("The timing file is too large to read safely.");
+        using var reader = new StreamReader(stream);
+        var buffer = new char[MaximumBytes + 1];
+        var length = reader.ReadBlock(buffer, 0, buffer.Length);
+        if (length > MaximumBytes) throw new IOException("The timing file is too large to read safely.");
+        return new string(buffer, 0, length);
+    }
+
+    private string LegacyPath(string filePath)
     {
         var canonical = Sql.PathKey(filePath);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
@@ -56,19 +120,18 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
     {
         var result = new Dictionary<PlaybackSegmentKind, List<PlaybackSegment>>();
         var warnings = false;
+        var hasPortableEdits = false;
+        string? migrationWarning = null;
+        var portablePath = Path.GetFullPath(filePath) + ".skip.txt";
         foreach (var (path, defaultKind) in Candidates(Path.GetFullPath(filePath)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 if (!File.Exists(path)) continue;
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                if (stream.Length > MaximumBytes) { warnings = true; continue; }
-                using var reader = new StreamReader(stream);
-                var buffer = new char[MaximumBytes + 1];
-                var length = reader.ReadBlock(buffer, 0, buffer.Length);
-                if (length > MaximumBytes) { warnings = true; continue; }
-                var text = new string(buffer, 0, length);
+                var text = ReadTextFile(path);
+                if (path.Equals(portablePath, StringComparison.OrdinalIgnoreCase))
+                    hasPortableEdits = text.Split('\n').Any(line => line.Trim() == SavedHeader);
                 var parsed = Parse(text, defaultKind);
                 warnings |= parsed.Warning is not null;
                 // The most specific file wins independently for each segment kind, including "none".
@@ -82,8 +145,8 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var path = SavedPath(filePath);
-            if (File.Exists(path))
+            var path = LegacyPath(filePath);
+            if (!hasPortableEdits && File.Exists(path))
             {
                 using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 if (stream.Length > MaximumBytes) throw new JsonException("Timing file is too large.");
@@ -94,6 +157,11 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
                     throw new JsonException("Invalid saved timings.");
                 foreach (var kind in new[] { PlaybackSegmentKind.Intro, PlaybackSegmentKind.Outro })
                     result[kind] = saved.Where(s => s.Kind == kind).ToList();
+                try { Save(filePath, saved, cancellationToken, migrating: true); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    migrationWarning = "Previous timings are available, but could not be copied beside the video. Reconnect its folder and make sure it is writable.";
+                }
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
@@ -101,7 +169,7 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
             warnings = true;
         }
         return new(result.Values.SelectMany(s => s).OrderBy(s => s.StartMs).ToArray(),
-            warnings ? "Some skip timings could not be read. You can edit intro/outro timings in the player." : null);
+            migrationWarning ?? (warnings ? "Some skip timings could not be read. You can edit intro/outro timings in the player." : null));
     }
 
     private static IEnumerable<(string Path, PlaybackSegmentKind? DefaultKind)> Candidates(string video)

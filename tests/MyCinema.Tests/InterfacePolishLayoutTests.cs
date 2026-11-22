@@ -131,7 +131,16 @@ public sealed partial class LibraryTemplateTests
                 var settings = new SettingsView { DataContext = shell.Settings };
                 RenderScaledPreview(new ScrollViewer { Content = settings, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 604, 640, scale, Path.Combine(artifacts, $"Settings-{scale * 100:0}pct.png"));
-                Assert.Single(Descendants(settings).OfType<CheckBox>());
+                Assert.Single(Descendants(settings).OfType<CheckBox>(), box => Equals(box.Content, "Enable page animations"));
+                var primarySize = Assert.IsType<Slider>(settings.FindName("PrimarySubtitleSize"));
+                var secondarySize = Assert.IsType<Slider>(settings.FindName("SecondarySubtitleSize"));
+                Assert.Equal(44, primarySize.Value);
+                Assert.Equal(36, secondarySize.Value);
+                primarySize.SetCurrentValue(Slider.ValueProperty, 50d);
+                Assert.Equal(50, shell.Settings.PrimarySubtitleFontSize);
+                primarySize.SetCurrentValue(Slider.ValueProperty, 44d);
+                var fallbackLanguage = Assert.IsType<ComboBox>(settings.FindName("FallbackAudioSelector"));
+                Assert.Equal("", fallbackLanguage.SelectedValue);
                 shell.Details.Show(1);
                 RenderScaledPreview(new MediaDetailsView { DataContext = shell.Details }, 604, 640, scale,
                     Path.Combine(artifacts, $"Details-{scale * 100:0}pct.png"));

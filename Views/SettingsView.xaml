@@ -2,6 +2,17 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Person_Movie_Player.ViewModels">
+    <UserControl.Resources>
+        <Style x:Key="SubtitleSizeSliderStyle" TargetType="Slider" BasedOn="{StaticResource {x:Type Slider}}">
+            <Setter Property="Minimum" Value="18" />
+            <Setter Property="Maximum" Value="80" />
+            <Setter Property="IsSnapToTickEnabled" Value="True" />
+            <Setter Property="TickFrequency" Value="1" />
+            <Setter Property="SmallChange" Value="1" />
+            <Setter Property="LargeChange" Value="4" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+    </UserControl.Resources>
     <StackPanel>
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,20">
             <StackPanel>
@@ -10,6 +21,48 @@
                 <TextBlock Text="Dark theme · Clear focus outlines · Artwork kept on this device" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
                 <Button Content="Save appearance" Command="{Binding SaveAppearanceCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,16,0,0" />
                 <TextBlock Text="{Binding AppearanceMessage}" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Playback" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Dual subtitle size" FontWeight="SemiBold" Margin="0,16,0,8" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition /><ColumnDefinition Width="24" /><ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding PrimarySubtitleFontSize, StringFormat=Primary ({0})}" />
+                        <Slider x:Name="PrimarySubtitleSize" Value="{Binding PrimarySubtitleFontSize}" Style="{StaticResource SubtitleSizeSliderStyle}"
+                                AutomationProperties.Name="Primary subtitle font size" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="{Binding SecondarySubtitleFontSize, StringFormat=Secondary ({0})}" />
+                        <Slider x:Name="SecondarySubtitleSize" Value="{Binding SecondarySubtitleFontSize}" Style="{StaticResource SubtitleSizeSliderStyle}"
+                                AutomationProperties.Name="Secondary subtitle font size" />
+                    </StackPanel>
+                </Grid>
+                <Border Background="Black" CornerRadius="6" Margin="0,12,0,0" Padding="12,10" ClipToBounds="True">
+                    <StackPanel>
+                        <TextBlock Text="Primary subtitle" FontSize="{Binding PrimarySubtitleFontSize}" Foreground="White"
+                                   TextAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock Text="Secondary subtitle" FontSize="{Binding SecondarySubtitleFontSize}" Foreground="White"
+                                   TextAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <TextBlock Text="Default tracks for new videos" FontWeight="SemiBold" Margin="0,18,0,8" />
+                <CheckBox Content="Prefer original audio when identified" IsChecked="{Binding PreferOriginalAudio}" Margin="0,0,0,8" />
+                <DockPanel MaxWidth="430" HorizontalAlignment="Left">
+                    <TextBlock Text="Fallback audio language" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="FallbackAudioSelector" ItemsSource="{Binding AudioLanguages}" DisplayMemberPath="Label"
+                              SelectedValuePath="Code" SelectedValue="{Binding FallbackAudioLanguage}" MinWidth="160" MaxDropDownHeight="250"
+                              ToolTip="Used when the original audio is unidentified or the original audio preference is off."
+                              Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Fallback audio language" />
+                </DockPanel>
+                <CheckBox Content="Start with English subtitles when available" IsChecked="{Binding PreferEnglishSubtitles}" Margin="0,8,0,0" />
+                <Button Content="Save playback preferences" Command="{Binding SavePlaybackPreferencesCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,16,0,0" />
+                <TextBlock Text="{Binding PlaybackPreferencesMessage}" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
             </StackPanel>
         </Border>
         <Border Style="{StaticResource CardStyle}">

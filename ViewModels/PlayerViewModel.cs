@@ -15,6 +15,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     private readonly IFileDialogService _dialogs;
     private readonly INavigationService _navigation;
     private readonly IUiDispatcher _dispatcher;
+    private readonly PlaybackPreferencesState? _playbackPreferences;
     private PlaybackSnapshot _snapshot;
     private double _seekPositionMs;
     private bool _isSeeking;
@@ -39,12 +40,15 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public PlayerViewModel(IPlaybackService playback, IFileDialogService dialogs,
         INavigationService navigation, IUiDispatcher dispatcher, WatchHistoryService? history = null,
         EpisodeSidebarViewModel? sidebar = null, TimeProvider? timeProvider = null,
-        IPlaybackSegmentService? segmentService = null, LibraryStore? library = null) : base("Player", "Settle in. Press play.")
+        IPlaybackSegmentService? segmentService = null, LibraryStore? library = null,
+        PlaybackPreferencesState? playbackPreferences = null) : base("Player", "Settle in. Press play.")
     {
         Playback = playback;
         _dialogs = dialogs;
         _navigation = navigation;
         _dispatcher = dispatcher;
+        _playbackPreferences = playbackPreferences;
+        if (_playbackPreferences is not null) _playbackPreferences.Changed += OnPlaybackPreferencesChanged;
         _history = history;
         _segmentService = segmentService;
         _library = library;
@@ -86,6 +90,14 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         {
             var path = _dialogs.ChooseSubtitleFile();
             if (path is not null) await Playback.LoadSubtitleAsync(path);
+        }, () => CanSelectTracks);
+        SelectSecondarySubtitleTrackCommand = new AsyncRelayCommand<PlaybackTrack>(
+            track => Playback.SetSecondarySubtitleTrackAsync(track!.Id),
+            track => CanSelectTracks && track is not null && SecondarySubtitleTracks.Contains(track));
+        LoadSecondarySubtitleCommand = new AsyncRelayCommand(async () =>
+        {
+            var path = _dialogs.ChooseSubtitleFile();
+            if (path is not null) await Playback.LoadSecondarySubtitleAsync(path);
         }, () => CanSelectTracks);
         SelectSpeedCommand = new AsyncRelayCommand<double>(Playback.SetSpeedAsync,
             speed => CanAdjustPicture && PlaybackOptions.Speeds.Contains(speed));
@@ -179,6 +191,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IAsyncRelayCommand<PlaybackTrack> SelectAudioTrackCommand { get; }
     public IAsyncRelayCommand<PlaybackTrack> SelectSubtitleTrackCommand { get; }
     public IAsyncRelayCommand LoadSubtitleCommand { get; }
+    public IAsyncRelayCommand<PlaybackTrack> SelectSecondarySubtitleTrackCommand { get; }
+    public IAsyncRelayCommand LoadSecondarySubtitleCommand { get; }
     public IAsyncRelayCommand<double> SelectSpeedCommand { get; }
     public IAsyncRelayCommand<AspectRatioChoice> SelectAspectRatioCommand { get; }
     public IRelayCommand DismissErrorCommand { get; }
@@ -213,6 +227,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool HasAudioTracks => CanSelectTracks && AudioTracks.Count > 0;
     public IReadOnlyList<PlaybackTrack> AudioTracks => _snapshot.AudioTracks;
     public IReadOnlyList<PlaybackTrack> SubtitleTracks => _snapshot.SubtitleTracks;
+    public IReadOnlyList<PlaybackTrack> SecondarySubtitleTracks => _snapshot.SecondarySubtitleTracks;
     public string AudioTrackHint => HasAudioTracks ? "Choose a language or dub included in this file" : "No audio tracks available";
     public PlaybackTrack? SelectedAudioTrack
     {
@@ -224,6 +239,29 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         get => SubtitleTracks.FirstOrDefault(t => t.Id == _snapshot.SubtitleTrackId);
         set { if (value is not null && value.Id != _snapshot.SubtitleTrackId && SelectSubtitleTrackCommand.CanExecute(value)) SelectSubtitleTrackCommand.Execute(value); }
     }
+    public PlaybackTrack? SelectedSecondarySubtitleTrack
+    {
+        get => SecondarySubtitleTracks.FirstOrDefault(t => t.Id == _snapshot.SecondarySubtitleTrackId);
+        set
+        {
+            if (value is not null && value.Id != _snapshot.SecondarySubtitleTrackId &&
+                SelectSecondarySubtitleTrackCommand.CanExecute(value)) SelectSecondarySubtitleTrackCommand.Execute(value);
+        }
+    }
+    public string PrimarySubtitleText => CanShowSubtitleOverlay
+        ? _snapshot.SubtitleOverlay?.Primary?.TextAt(_snapshot.PositionMs) ?? string.Empty : string.Empty;
+    public string SecondarySubtitleText => CanShowSubtitleOverlay
+        ? _snapshot.SubtitleOverlay?.Secondary.TextAt(_snapshot.PositionMs) ?? string.Empty : string.Empty;
+    public int PrimarySubtitleFontSize => _playbackPreferences?.Current.PrimarySubtitleFontSize ?? PlaybackPreferences.DefaultPrimarySubtitleFontSize;
+    public int SecondarySubtitleFontSize => _playbackPreferences?.Current.SecondarySubtitleFontSize ?? PlaybackPreferences.DefaultSecondarySubtitleFontSize;
+    private bool CanShowSubtitleOverlay => _snapshot.State is PlaybackState.Playing or PlaybackState.Paused;
+
+    private void OnPlaybackPreferencesChanged(object? sender, EventArgs args) => _dispatcher.Post(() =>
+    {
+        if (_disposed) return;
+        OnPropertyChanged(nameof(PrimarySubtitleFontSize));
+        OnPropertyChanged(nameof(SecondarySubtitleFontSize));
+    });
     public string Status => _snapshot.State.ToString();
     public string PlayPauseLabel => IsPlaying ? "Pause" : _snapshot.State == PlaybackState.Error ? "Retry" : "Play";
     public string MuteLabel => IsMuted ? "Unmute" : "Mute";
@@ -604,6 +642,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         SelectAudioTrackCommand.NotifyCanExecuteChanged();
         SelectSubtitleTrackCommand.NotifyCanExecuteChanged();
         LoadSubtitleCommand.NotifyCanExecuteChanged();
+        SelectSecondarySubtitleTrackCommand.NotifyCanExecuteChanged();
+        LoadSecondarySubtitleCommand.NotifyCanExecuteChanged();
         SelectSpeedCommand.NotifyCanExecuteChanged();
         SelectAspectRatioCommand.NotifyCanExecuteChanged();
         SubtitleMenuCommand.NotifyCanExecuteChanged();
@@ -628,6 +668,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
 
     public void Dispose()
     {
+        if (_playbackPreferences is not null) _playbackPreferences.Changed -= OnPlaybackPreferencesChanged;
         if (_disposed) return;
         _disposed = true;
         OpenFileCommand.PropertyChanged -= OnOpenCommandChanged;

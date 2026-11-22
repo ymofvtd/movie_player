@@ -12,6 +12,7 @@ public sealed class PlaybackService : IPlaybackService
 {
     private readonly ILogger<PlaybackService> _logger;
     private readonly string[] _engineOptions;
+    private readonly PlaybackPreferencesState? _playbackPreferences;
     private readonly SemaphoreSlim _operations = new(1, 1);
     private readonly object _stateLock = new();
     private PlaybackSnapshot _current = new();
@@ -23,13 +24,24 @@ public sealed class PlaybackService : IPlaybackService
     private PlaybackSnapshot? _reloadTracks;
     private volatile bool _reloadAwaitingMetadata;
     private readonly List<string> _externalSubtitles = [];
+    private readonly Dictionary<PlaybackTrack, SubtitleTimeline> _secondaryFiles = [];
+    private readonly Dictionary<string, SubtitleTimeline> _subtitleFileCache = new(StringComparer.OrdinalIgnoreCase);
+    private (uint Codec, SubtitleTimeline Timeline)[]? _embeddedSubtitles;
+    private (HashSet<int> PreviousIds, SubtitleTimeline Timeline)? _pendingPrimarySubtitle;
+    private PlaybackPreferences _inputPreferences = new();
+    private MatroskaTrackFlags[] _audioFlags = [];
+    private MatroskaTrackFlags[] _subtitleFlags = [];
+    private bool _preferAudioForInput;
+    private bool _preferEnglishForInput;
 
-    public PlaybackService(ILogger<PlaybackService> logger) : this(logger, []) { }
+    public PlaybackService(ILogger<PlaybackService> logger, PlaybackPreferencesState? playbackPreferences = null)
+        : this(logger, [], playbackPreferences) { }
 
-    public PlaybackService(ILogger<PlaybackService> logger, string[] engineOptions)
+    public PlaybackService(ILogger<PlaybackService> logger, string[] engineOptions, PlaybackPreferencesState? playbackPreferences = null)
     {
         _logger = logger;
         _engineOptions = engineOptions;
+        _playbackPreferences = playbackPreferences;
     }
 
     // Only the WPF view adapter consumes this handle; Core and the player ViewModel remain engine-independent.
@@ -79,14 +91,20 @@ public sealed class PlaybackService : IPlaybackService
             _reloadTracks = null;
             _reloadAwaitingMetadata = false;
             _externalSubtitles.Clear();
+            _secondaryFiles.Clear();
+            _subtitleFileCache.Clear();
+            _embeddedSubtitles = null;
+            _pendingPrimarySubtitle = null;
             Volatile.Write(ref _lastNativeError, null);
             Update(state => state with
             {
                 State = PlaybackState.Opening, FilePath = fullPath, PositionMs = 0,
                 DurationMs = 0, CanSeek = false, ErrorMessage = null, ErrorDetails = null, SessionId = state.SessionId + 1,
-                AudioTracks = [], SubtitleTracks = [], AudioTrackId = -1, SubtitleTrackId = -1, VideoFrameDurationMs = 0
+                AudioTracks = [], SubtitleTracks = [], SecondarySubtitleTracks = [], AudioTrackId = -1,
+                SubtitleTrackId = -1, SecondarySubtitleTrackId = -1, SubtitleOverlay = null, VideoFrameDurationMs = 0
             });
             using var media = new Media(_engine, fullPath, FromType.FromPath);
+            ConfigureTrackPreferences(media, fullPath);
             if (startPositionMs > 0)
                 media.AddOption(":start-time=" + (startPositionMs / 1000d).ToString("0.###", CultureInfo.InvariantCulture));
             _acceptEvents = true;
@@ -142,6 +160,7 @@ public sealed class PlaybackService : IPlaybackService
         Interlocked.Exchange(ref _reloadPositionMs, position);
         _reloadTracks = saved;
         _reloadAwaitingMetadata = true;
+        _preferAudioForInput = _preferEnglishForInput = false;
         Volatile.Write(ref _lastNativeError, null);
         Update(s => s with { State = PlaybackState.Opening, PositionMs = position, CanSeek = false,
             ErrorMessage = null, ErrorDetails = null });
@@ -241,6 +260,7 @@ public sealed class PlaybackService : IPlaybackService
     {
         if (!CanSelectTracks || !Current.AudioTracks.Any(t => t.Id == trackId)) return;
         _reloadTracks = null;
+        _preferAudioForInput = false;
         if (!MediaPlayer!.SetAudioTrack(trackId))
             ReportError("This audio track could not be selected. Try another track.", preservePlayback: true);
         else Update(s => s with { AudioTrackId = trackId, ErrorMessage = null });
@@ -249,8 +269,22 @@ public sealed class PlaybackService : IPlaybackService
 
     public Task SetSubtitleTrackAsync(int trackId) => ExecuteAsync(() =>
     {
-        if (!CanSelectTracks || !Current.SubtitleTracks.Any(t => t.Id == trackId)) return;
+        var state = Current;
+        if (!CanSelectTracks || !state.SubtitleTracks.Any(t => t.Id == trackId)) return;
         _reloadTracks = null;
+        _preferEnglishForInput = false;
+        _pendingPrimarySubtitle = null;
+        if (state.SubtitleOverlay is { } overlay)
+        {
+            var primary = trackId == -1 ? null : FindSubtitleTimeline(trackId);
+            if (trackId != -1 && (trackId == state.SecondarySubtitleTrackId || primary is null))
+            {
+                ReportDualSubtitleError(trackId == state.SecondarySubtitleTrackId);
+                return;
+            }
+            Update(s => s with { SubtitleTrackId = trackId, SubtitleOverlay = overlay with { Primary = primary }, ErrorMessage = null });
+            return;
+        }
         if (!MediaPlayer!.SetSpu(trackId))
             ReportError("This subtitle track could not be selected. Try another track.", preservePlayback: true);
         else Update(s => s with { SubtitleTrackId = trackId, ErrorMessage = null });
@@ -265,18 +299,155 @@ public sealed class PlaybackService : IPlaybackService
             ReportError("The subtitle file is unavailable. Choose an existing local subtitle file.", preservePlayback: true);
             return;
         }
-        if (!MediaPlayer!.AddSlave(MediaSlaveType.Subtitle, new Uri(Path.GetFullPath(filePath)).AbsoluteUri, true))
+        var fullPath = Path.GetFullPath(filePath);
+        var pending = Current.SubtitleOverlay is null
+            ? ((HashSet<int> PreviousIds, SubtitleTimeline Timeline)?)null
+            : (Current.SubtitleTracks.Select(track => track.Id).ToHashSet(), ReadSubtitleFile(fullPath));
+        if (!MediaPlayer!.AddSlave(MediaSlaveType.Subtitle, new Uri(fullPath).AbsoluteUri, true))
             ReportError("VLC could not load this subtitle file. Try an SRT, ASS, SSA, or VTT file.", preservePlayback: true);
         else
         {
-            var fullPath = Path.GetFullPath(filePath);
+            _preferEnglishForInput = false;
+            _pendingPrimarySubtitle = pending;
             if (!_externalSubtitles.Contains(fullPath, StringComparer.OrdinalIgnoreCase)) _externalSubtitles.Add(fullPath);
             Update(s => s with { ErrorMessage = null });
         }
         RefreshTracks();
     }, "The subtitle file could not be loaded.", preservePlayback: true);
 
+    public Task SetSecondarySubtitleTrackAsync(int trackId) => ExecuteAsync(() =>
+    {
+        var state = Current;
+        if (!CanSelectTracks || !state.SecondarySubtitleTracks.Any(track => track.Id == trackId)) return;
+        if (trackId == -1)
+        {
+            if (MediaPlayer!.Spu != state.SubtitleTrackId && !MediaPlayer.SetSpu(state.SubtitleTrackId))
+            {
+                ReportError("The primary subtitle track could not be restored.", preservePlayback: true);
+                return;
+            }
+            _pendingPrimarySubtitle = null;
+            Update(s => s with { SecondarySubtitleTrackId = -1, SubtitleOverlay = null, ErrorMessage = null });
+            return;
+        }
+
+        var secondary = _secondaryFiles.FirstOrDefault(file => file.Key.Id == trackId).Value ?? FindSubtitleTimeline(trackId);
+        if (TryEnableSecondarySubtitle(trackId, secondary)) RefreshTracks();
+    }, "The secondary subtitle track could not be selected.", preservePlayback: true);
+
+    public Task LoadSecondarySubtitleAsync(string filePath) => ExecuteAsync(() =>
+    {
+        if (!CanSelectTracks) return;
+        var path = Path.GetFullPath(filePath);
+        var timeline = ReadSubtitleFile(path);
+        var track = _secondaryFiles.FirstOrDefault(file => ReferenceEquals(file.Value, timeline)).Key;
+        track ??= new PlaybackTrack(-2 - _secondaryFiles.Count, Path.GetFileName(path));
+        if (!TryEnableSecondarySubtitle(track.Id, timeline)) return;
+        _secondaryFiles.TryAdd(track, timeline);
+        RefreshTracks();
+    }, "The secondary subtitle file could not be loaded.", preservePlayback: true);
+
+    private bool TryEnableSecondarySubtitle(int trackId, SubtitleTimeline? secondary)
+    {
+        var state = Current;
+        var sameTrack = trackId == state.SubtitleTrackId;
+        var primary = sameTrack || state.SubtitleTrackId == -1 ? null : state.SubtitleOverlay is { } overlay
+            ? overlay.Primary : FindSubtitleTimeline(state.SubtitleTrackId);
+        if (sameTrack || secondary is null || state.SubtitleTrackId != -1 && primary is null)
+        {
+            ReportDualSubtitleError(sameTrack);
+            return false;
+        }
+        if (MediaPlayer!.Spu != -1 && !MediaPlayer.SetSpu(-1))
+        {
+            ReportError("Dual subtitles could not be enabled.", preservePlayback: true);
+            return false;
+        }
+        _reloadTracks = null;
+        Update(s => s with { SecondarySubtitleTrackId = trackId, SubtitleOverlay = new(primary, secondary), ErrorMessage = null });
+        return true;
+    }
+
+    private void ReportDualSubtitleError(bool sameTrack) => ReportError(sameTrack
+        ? "Choose different primary and secondary subtitle tracks."
+        : "Dual subtitles need text tracks from an MKV or WebM video, or SRT, ASS, SSA, or VTT files.", preservePlayback: true);
+
+    private SubtitleTimeline ReadSubtitleFile(string path)
+    {
+        if (!_subtitleFileCache.TryGetValue(path, out var timeline))
+            _subtitleFileCache[path] = timeline = SubtitleFiles.Read(path);
+        return timeline;
+    }
+
+    private SubtitleTimeline? FindSubtitleTimeline(int trackId)
+    {
+        using var media = MediaPlayer!.Media;
+        if (media is null) return null;
+        var tracks = media.Tracks.Where(track => track.TrackType == TrackType.Text).ToArray();
+        var track = tracks.FirstOrDefault(track => track.Id == trackId);
+        if (track.Codec is not (MatroskaSubtitles.Subt or MatroskaSubtitles.Ssa or MatroskaSubtitles.Vtt)) return null;
+
+        var path = Current.FilePath!;
+        _embeddedSubtitles ??= Path.GetExtension(path).ToLowerInvariant() is ".mkv" or ".webm"
+            ? MatroskaSubtitles.Read(path) : [];
+
+        // VLC creates the embedded streams in track-number order, followed by external files.
+        // Match within a codec so image tracks and generated captions do not affect the order.
+        var ids = tracks.Where(other => other.Codec == track.Codec).Select(other => other.Id).Order().ToArray();
+        var embedded = _embeddedSubtitles.Where(other => other.Codec == track.Codec).ToArray();
+        var index = Array.IndexOf(ids, trackId);
+        if (index < embedded.Length)
+            return embedded[index].Timeline.IsEmpty ? null : embedded[index].Timeline;
+
+        var files = media.Slaves.Where(slave => slave.Type == MediaSlaveType.Subtitle)
+            .Select(slave => Uri.TryCreate(slave.Uri, UriKind.Absolute, out var uri) && uri.IsFile ? uri.LocalPath : null)
+            .OfType<string>()
+            .Where(file => Path.GetExtension(file).ToLowerInvariant() switch
+            {
+                ".srt" => track.Codec == MatroskaSubtitles.Subt,
+                ".ass" or ".ssa" => track.Codec == MatroskaSubtitles.Ssa,
+                ".vtt" => track.Codec == MatroskaSubtitles.Vtt,
+                _ => false
+            }).ToArray();
+        return ids.Length == embedded.Length + files.Length ? ReadSubtitleFile(files[index - embedded.Length]) : null;
+    }
+
     private bool CanSelectTracks => MediaPlayer is not null && Current.State is PlaybackState.Playing or PlaybackState.Paused;
+
+    private void ConfigureTrackPreferences(Media media, string path)
+    {
+        _inputPreferences = _playbackPreferences?.Current ?? new PlaybackPreferences();
+        _preferAudioForInput = _inputPreferences.PreferOriginalAudio || _inputPreferences.FallbackAudioLanguage.Length > 0;
+        _preferEnglishForInput = _inputPreferences.PreferEnglishSubtitles;
+        _audioFlags = _subtitleFlags = [];
+        if (_preferEnglishForInput) media.AddOption(":sub-language=en");
+        if (!_inputPreferences.PreferOriginalAudio && _inputPreferences.FallbackAudioLanguage.Length > 0)
+            media.AddOption(":audio-language=" + _inputPreferences.FallbackAudioLanguage);
+        if ((_preferAudioForInput || _preferEnglishForInput) && Path.GetExtension(path).ToLowerInvariant() is ".mkv" or ".webm")
+        {
+            try { (_audioFlags, _subtitleFlags) = MatroskaSubtitles.ReadTrackFlags(path); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                _logger.LogDebug(error, "Could not read Matroska track flags for {FilePath}", path);
+            }
+        }
+    }
+
+    private void ApplyTrackPreferences(MediaPlayer player, PlaybackTrack[] audio, PlaybackTrack[] subtitles, bool overlayActive)
+    {
+        if (_preferAudioForInput && audio.Length >= _audioFlags.Length &&
+            PreferredTracks.Audio(audio, _audioFlags, _inputPreferences) is { } original)
+        {
+            _preferAudioForInput = false;
+            if (player.AudioTrack != original.Id) player.SetAudioTrack(original.Id);
+        }
+        if (_preferEnglishForInput && !overlayActive && subtitles.Length - 1 >= _subtitleFlags.Length &&
+            PreferredTracks.EnglishSubtitles(subtitles, _subtitleFlags) is { } english)
+        {
+            _preferEnglishForInput = false;
+            if (player.Spu != english.Id) player.SetSpu(english.Id);
+        }
+    }
 
     private void RefreshTracks()
     {
@@ -302,23 +473,46 @@ public sealed class PlaybackService : IPlaybackService
         var audio = MediaPlayer.AudioTrackDescription.Where(t => t.Id >= 0).Select(t => Describe(t, TrackType.Audio)).ToArray();
         var subtitles = new[] { new PlaybackTrack(-1, "Off") }.Concat(MediaPlayer.SpuDescription
             .Where(t => t.Id >= 0).Select(t => Describe(t, TrackType.Text))).ToArray();
+        var secondarySubtitles = subtitles.Where(track => track.Id == -1 || metadata.Any(native =>
+            native.Id == track.Id && native.TrackType == TrackType.Text &&
+            native.Codec is MatroskaSubtitles.Subt or MatroskaSubtitles.Ssa or MatroskaSubtitles.Vtt))
+            .Concat(_secondaryFiles.Keys).ToArray();
+        var current = Current;
+        var overlay = current.SubtitleOverlay;
+        var overlayPrimaryId = current.SubtitleTrackId;
+        if (overlay is not null && _pendingPrimarySubtitle is { } pending)
+        {
+            var added = subtitles.FirstOrDefault(track => !pending.PreviousIds.Contains(track.Id));
+            if (added is not null)
+            {
+                overlayPrimaryId = added.Id;
+                overlay = overlay with { Primary = pending.Timeline };
+                _pendingPrimarySubtitle = null;
+            }
+        }
+
+        if (overlay is not null && MediaPlayer.Spu != -1) MediaPlayer.SetSpu(-1);
         if (_reloadTracks is { } saved)
         {
             if (audio.Any(t => t.Id == saved.AudioTrackId) && MediaPlayer.AudioTrack != saved.AudioTrackId)
                 MediaPlayer.SetAudioTrack(saved.AudioTrackId);
-            if (subtitles.Any(t => t.Id == saved.SubtitleTrackId) && MediaPlayer.Spu != saved.SubtitleTrackId)
-                MediaPlayer.SetSpu(saved.SubtitleTrackId);
-            if (MediaPlayer.AudioTrack == saved.AudioTrackId && MediaPlayer.Spu == saved.SubtitleTrackId)
+            var nativeSubtitleId = overlay is null ? saved.SubtitleTrackId : -1;
+            if (overlay is null && subtitles.Any(t => t.Id == nativeSubtitleId) && MediaPlayer.Spu != nativeSubtitleId)
+                MediaPlayer.SetSpu(nativeSubtitleId);
+            if (MediaPlayer.AudioTrack == saved.AudioTrackId && MediaPlayer.Spu == nativeSubtitleId)
                 _reloadTracks = null;
         }
-        var current = Current;
+        else ApplyTrackPreferences(MediaPlayer, audio, subtitles, overlay is not null);
+        var primaryId = overlay is null ? MediaPlayer.Spu : overlayPrimaryId;
         if (current.AudioTracks.SequenceEqual(audio) && current.SubtitleTracks.SequenceEqual(subtitles) &&
-            current.AudioTrackId == MediaPlayer.AudioTrack && current.SubtitleTrackId == MediaPlayer.Spu &&
-            current.VideoFrameDurationMs == frameDuration) return;
+            current.SecondarySubtitleTracks.SequenceEqual(secondarySubtitles) &&
+            current.AudioTrackId == MediaPlayer.AudioTrack && current.SubtitleTrackId == primaryId &&
+            current.SubtitleOverlay == overlay && current.VideoFrameDurationMs == frameDuration) return;
         Update(s => s with
         {
             AudioTracks = Array.AsReadOnly(audio), SubtitleTracks = Array.AsReadOnly(subtitles),
-            AudioTrackId = MediaPlayer.AudioTrack, SubtitleTrackId = MediaPlayer.Spu, VideoFrameDurationMs = frameDuration
+            SecondarySubtitleTracks = Array.AsReadOnly(secondarySubtitles), AudioTrackId = MediaPlayer.AudioTrack,
+            SubtitleTrackId = primaryId, SubtitleOverlay = overlay, VideoFrameDurationMs = frameDuration
         });
     }
 

@@ -85,11 +85,11 @@ public sealed class PlaybackTimingEditorViewModel : ObservableObject
         {
             await _service.SaveAsync(_filePath, ordered);
             _saved(ordered);
-            Message = "Saved for this video. Ready now and next time you watch.";
+            Message = "Saved beside this video. Keep the .skip.txt file with it when moving or backing up.";
         }
         catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
         {
-            Message = "Couldn't save timings. Your previous timings are unchanged. Try saving again.";
+            Message = "Couldn't save beside the video. Make sure its folder is connected and writable. Your previous timings are unchanged.";
         }
         finally { IsSaving = false; }
     }

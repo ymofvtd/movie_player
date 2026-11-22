@@ -21,4 +21,6 @@ public interface IPlaybackService : IDisposable
     Task SetAudioTrackAsync(int trackId);
     Task SetSubtitleTrackAsync(int trackId);
     Task LoadSubtitleAsync(string filePath);
+    Task SetSecondarySubtitleTrackAsync(int trackId);
+    Task LoadSecondarySubtitleAsync(string filePath);
 }

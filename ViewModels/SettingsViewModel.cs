@@ -3,12 +3,15 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using MyCinema.Core.Interfaces;
 using MyCinema.Core.Models;
+using MyCinema.Core.Playback;
 using MyCinema.Core.Scanning;
 using Person_Movie_Player.Services;
+using System.Globalization;
 
 namespace Person_Movie_Player.ViewModels;
 
 public sealed record ScanPreviewItem(string Label, IReadOnlyList<ScanPreviewItem> Children);
+public sealed record AudioLanguageChoice(string Code, string Label);
 
 public sealed partial class SettingsViewModel : PageViewModel
 {
@@ -18,9 +21,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService? _settings;
+    private readonly PlaybackPreferencesState? _playbackPreferences;
+    private readonly SemaphoreSlim _settingsWrites = new(1, 1);
 
     public SettingsViewModel(IApplicationPaths paths, ILibraryRepository library, ILibraryScannerService scanner,
-        IUiDispatcher dispatcher, ILogger<SettingsViewModel> logger, ISettingsService? settings = null)
+        IUiDispatcher dispatcher, ILogger<SettingsViewModel> logger, ISettingsService? settings = null,
+        PlaybackPreferencesState? playbackPreferences = null)
         : base("Settings", "Your cinema, on your computer.")
     {
         _paths = paths;
@@ -29,7 +35,9 @@ public sealed partial class SettingsViewModel : PageViewModel
         _dispatcher = dispatcher;
         _logger = logger;
         _settings = settings;
+        _playbackPreferences = playbackPreferences;
         SaveAppearanceCommand = new AsyncRelayCommand(SaveAppearanceAsync, () => _settings is not null);
+        SavePlaybackPreferencesCommand = new AsyncRelayCommand(SavePlaybackPreferencesAsync, () => _settings is not null);
         ScanCommand = new AsyncRelayCommand(ScanAsync);
         CancelScanCommand = new RelayCommand(() =>
         {
@@ -45,8 +53,25 @@ public sealed partial class SettingsViewModel : PageViewModel
     public IAsyncRelayCommand ScanCommand { get; }
     public IRelayCommand CancelScanCommand { get; }
     public IAsyncRelayCommand SaveAppearanceCommand { get; }
+    public IAsyncRelayCommand SavePlaybackPreferencesCommand { get; }
     [ObservableProperty] private bool _enableAnimations = true;
     [ObservableProperty] private string _appearanceMessage = "";
+    [ObservableProperty] private int _primarySubtitleFontSize = PlaybackPreferences.DefaultPrimarySubtitleFontSize;
+    [ObservableProperty] private int _secondarySubtitleFontSize = PlaybackPreferences.DefaultSecondarySubtitleFontSize;
+    [ObservableProperty] private bool _preferOriginalAudio = true;
+    [ObservableProperty] private string _fallbackAudioLanguage = "";
+    [ObservableProperty] private bool _preferEnglishSubtitles = true;
+    [ObservableProperty] private string _playbackPreferencesMessage = "";
+    public IReadOnlyList<AudioLanguageChoice> AudioLanguages { get; } =
+    [
+        new("", "Video default"),
+        .. CultureInfo.GetCultures(CultureTypes.NeutralCultures)
+            .Select(culture => culture.TwoLetterISOLanguageName)
+            .Where(code => code.Length is 2 or 3 && code.All(char.IsAsciiLetterLower) && code != "iv")
+            .Distinct()
+            .Select(code => new AudioLanguageChoice(code, CultureInfo.GetCultureInfo(code).EnglishName))
+            .OrderBy(choice => choice.Label)
+    ];
     public event EventHandler? LibraryChanged;
 
     [ObservableProperty] private string _libraryRoots = "Loading library folders…";
@@ -63,7 +88,18 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        if (_settings is not null) EnableAnimations = (await _settings.LoadAsync(cancellationToken)).EnableAnimations;
+        if (_settings is not null)
+        {
+            var settings = await _settings.LoadAsync(cancellationToken);
+            EnableAnimations = settings.EnableAnimations;
+            var playback = settings.Playback;
+            PrimarySubtitleFontSize = playback.PrimarySubtitleFontSize;
+            SecondarySubtitleFontSize = playback.SecondarySubtitleFontSize;
+            PreferOriginalAudio = playback.PreferOriginalAudio;
+            FallbackAudioLanguage = playback.FallbackAudioLanguage;
+            PreferEnglishSubtitles = playback.PreferEnglishSubtitles;
+            _playbackPreferences?.Apply(playback);
+        }
         await _scanner.ConfigureDefaultRootAsync(cancellationToken);
         await RefreshAsync(cancellationToken);
     }
@@ -72,8 +108,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         try
         {
-            var current = await _settings!.LoadAsync();
-            await _settings.SaveAsync(current with { EnableAnimations = EnableAnimations });
+            await SaveSettingsAsync(current => current with { EnableAnimations = EnableAnimations });
             AppearanceMessage = "Appearance saved.";
         }
         catch (Exception error)
@@ -81,6 +116,40 @@ public sealed partial class SettingsViewModel : PageViewModel
             _logger.LogError(error, "Could not save appearance settings");
             AppearanceMessage = "Could not save appearance. Check that the application data folder is writable, then try again.";
         }
+    }
+
+    private async Task SavePlaybackPreferencesAsync()
+    {
+        var playback = new PlaybackPreferences
+        {
+            PrimarySubtitleFontSize = PrimarySubtitleFontSize,
+            SecondarySubtitleFontSize = SecondarySubtitleFontSize,
+            PreferOriginalAudio = PreferOriginalAudio,
+            FallbackAudioLanguage = FallbackAudioLanguage,
+            PreferEnglishSubtitles = PreferEnglishSubtitles
+        };
+        try
+        {
+            await SaveSettingsAsync(current => current with { Playback = playback });
+            _playbackPreferences?.Apply(playback);
+            PlaybackPreferencesMessage = "Playback preferences saved.";
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "Could not save playback preferences");
+            PlaybackPreferencesMessage = "Could not save playback preferences. Check that the application data folder is writable.";
+        }
+    }
+
+    private async Task SaveSettingsAsync(Func<ApplicationSettings, ApplicationSettings> update)
+    {
+        await _settingsWrites.WaitAsync();
+        try
+        {
+            var current = await _settings!.LoadAsync();
+            await _settings.SaveAsync(update(current));
+        }
+        finally { _settingsWrites.Release(); }
     }
 
     private async Task ScanAsync(CancellationToken cancellationToken)
@@ -163,6 +232,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         ScanCommand.Cancel();
         if (ScanCommand.ExecutionTask is { } task) await task;
         if (SaveAppearanceCommand.ExecutionTask is { } save) await save;
+        if (SavePlaybackPreferencesCommand.ExecutionTask is { } savePlayback) await savePlayback;
     }
 
     private sealed class UiScanProgress(Action<ScanProgress> report) : IProgress<ScanProgress>

@@ -98,9 +98,9 @@ public sealed class NativePlaybackTests : IDisposable
         Assert.True(file.Length > 0);
     }
 
-    private static PlaybackService CreatePlayback()
+    private static PlaybackService CreatePlayback(PlaybackPreferencesState? preferences = null)
     {
-        var playback = new PlaybackService(NullLogger<PlaybackService>.Instance, ["--vout=dummy", "--aout=dummy"]);
+        var playback = new PlaybackService(NullLogger<PlaybackService>.Instance, ["--vout=dummy", "--aout=dummy"], preferences);
         playback.InitializeAsync().GetAwaiter().GetResult();
         // MediaPlayer's configuration overrides engine defaults at Play, so disable it here.
         playback.MediaPlayer!.EnableHardwareDecoding = false;
@@ -252,6 +252,95 @@ public sealed class NativePlaybackTests : IDisposable
                 using var file = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
                 Assert.True(file.Length > 0);
             }
+        }
+    }
+
+    [Fact]
+    public async Task OpensWithOriginalAudioAndEnglishSubtitlesAndHonorsManualChoices()
+    {
+        var preferences = new PlaybackPreferencesState();
+        preferences.Apply(preferences.Current with { FallbackAudioLanguage = "ru" });
+        using var playback = CreatePlayback(preferences);
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv");
+        await playback.OpenAsync(path, 3000);
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing &&
+            playback.Current.AudioTracks.Any(t => t.Id == playback.Current.AudioTrackId && t.Language == "eng") &&
+            playback.Current.SubtitleTracks.Any(t => t.Id == playback.Current.SubtitleTrackId && t.Language == "eng"));
+
+        var russian = Assert.Single(playback.Current.AudioTracks, track => track.Language == "rus");
+        var english = Assert.Single(playback.Current.AudioTracks, track => track.Language == "eng");
+        var englishSubtitle = Assert.Single(playback.Current.SubtitleTracks, track => track.Language == "eng");
+        Assert.Equal(english.Id, playback.MediaPlayer!.AudioTrack);
+        Assert.Equal(englishSubtitle.Id, playback.MediaPlayer.Spu);
+        await playback.SetAudioTrackAsync(russian.Id);
+        await playback.SetSubtitleTrackAsync(-1);
+        await playback.ReloadAsync();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing &&
+            playback.MediaPlayer.AudioTrack == russian.Id && playback.MediaPlayer.Spu == -1);
+
+        preferences.Apply(preferences.Current with { PreferOriginalAudio = false, PreferEnglishSubtitles = false });
+        await playback.OpenAsync(path);
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.AudioTrackId == russian.Id);
+        Assert.Equal(russian.Id, playback.MediaPlayer.AudioTrack);
+
+        await playback.OpenAsync(WriteWave());
+        await WaitUntil(() => playback.Current.State == PlaybackState.Playing && playback.Current.AudioTracks.Count == 1);
+        Assert.Null(playback.Current.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task DualSubtitlesFollowTheClockAndRestoreNativePrimaryWhenTurnedOff()
+    {
+        using var playback = CreatePlayback();
+        await playback.OpenAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tracks.mkv"), 5000);
+        await WaitUntil(() => playback.Current.CanSeek && playback.Current.PositionMs >= 4500 && playback.Current.SecondarySubtitleTracks.Count == 2);
+        playback.Pause();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Paused);
+        var embedded = Assert.Single(playback.Current.SecondarySubtitleTracks, track => track.Id >= 0);
+        await playback.SetSubtitleTrackAsync(embedded.Id);
+        await WaitUntil(() => playback.Current.SubtitleTrackId == embedded.Id);
+
+        Directory.CreateDirectory(_directory);
+        var secondaryFile = Path.Combine(_directory, "Translation.vtt");
+        await File.WriteAllTextAsync(secondaryFile, "WEBVTT\n\n00:04.000 --> 00:08.000\n<i>你好</i>\n");
+        await playback.LoadSecondarySubtitleAsync(secondaryFile);
+        VerifyCaptions("English subtitle test", "你好");
+        Assert.Equal(embedded.Id, playback.Current.SubtitleTrackId);
+        Assert.Equal(-1, playback.MediaPlayer!.Spu);
+        var secondaryId = playback.Current.SecondarySubtitleTrackId;
+        Assert.Equal("Translation.vtt", Assert.Single(playback.Current.SecondarySubtitleTracks, track => track.Id == secondaryId).Label);
+
+        playback.Seek(9000);
+        Assert.Empty(playback.Current.SubtitleOverlay!.Secondary.TextAt(playback.Current.PositionMs));
+        playback.Seek(6000);
+        VerifyCaptions("English subtitle test", "你好");
+        await playback.ReloadAsync();
+        await WaitUntil(() => playback.Current.State == PlaybackState.Paused && playback.Current.CanSeek && playback.MediaPlayer.Spu == -1);
+        VerifyCaptions("English subtitle test", "你好");
+        await playback.SetSecondarySubtitleTrackAsync(-1);
+        Assert.Null(playback.Current.SubtitleOverlay);
+        await WaitUntil(() => playback.MediaPlayer.Spu == embedded.Id);
+
+        var primaryFile = Path.Combine(_directory, "Another language.srt");
+        await File.WriteAllTextAsync(primaryFile, "1\n00:00:00,000 --> 00:00:19,000\nExternal dialogue\n");
+        await playback.LoadSubtitleAsync(primaryFile);
+        await WaitUntil(() => playback.Current.SubtitleTrackId >= 0 && playback.Current.SubtitleTrackId != embedded.Id);
+        await playback.SetSecondarySubtitleTrackAsync(embedded.Id);
+        VerifyCaptions("External dialogue", "English subtitle test");
+        await playback.SetSecondarySubtitleTrackAsync(secondaryId);
+        VerifyCaptions("External dialogue", "你好");
+
+        await playback.OpenAsync(WriteWave());
+        Assert.Null(playback.Current.SubtitleOverlay);
+        Assert.Equal(-1, playback.Current.SecondarySubtitleTrackId);
+        Assert.DoesNotContain(playback.Current.SecondarySubtitleTracks, track => track.Id == secondaryId);
+
+        void VerifyCaptions(string primary, string secondary)
+        {
+            var state = playback.Current;
+            Assert.True(state.SubtitleOverlay is not null, state.ErrorMessage + " " + state.ErrorDetails);
+            Assert.Equal(primary, state.SubtitleOverlay.Primary?.TextAt(state.PositionMs));
+            Assert.Equal(secondary, state.SubtitleOverlay.Secondary.TextAt(state.PositionMs));
         }
     }
 

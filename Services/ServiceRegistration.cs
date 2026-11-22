@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Windows.Threading;
 using MyCinema.Core.Interfaces;
+using MyCinema.Core.Playback;
 using MyCinema.Infrastructure.Database;
 using MyCinema.Infrastructure.Logging;
 using MyCinema.Infrastructure.Repositories;
@@ -29,6 +30,7 @@ public static class ServiceRegistration
         services.AddSingleton<IProgressRepository, ProgressRepository>();
         services.AddSingleton<ISettingsRepository, SettingsRepository>();
         services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<PlaybackPreferencesState>();
         services.AddSingleton<INavigationService, NavigationService>();
         services.AddSingleton<PlaybackService>();
         services.AddSingleton<IPlaybackService>(provider => provider.GetRequiredService<PlaybackService>());

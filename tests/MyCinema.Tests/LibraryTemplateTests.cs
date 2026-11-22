@@ -52,19 +52,23 @@ public sealed partial class LibraryTemplateTests
                     content.UpdateLayout();
                     Assert.True(content.DesiredSize.Width > 0);
                 }
-                using var player = new PlayerViewModel(new PreviewPlayback(), new PreviewDialogs(),
-                    new NavigationService(NullLogger<NavigationService>.Instance), new PreviewDispatcher());
+                using var playback = new PreviewPlayback();
+                var playbackPreferences = new PlaybackPreferencesState();
+                using var player = new PlayerViewModel(playback, new PreviewDialogs(),
+                    new NavigationService(NullLogger<NavigationService>.Instance), new PreviewDispatcher(),
+                    playbackPreferences: playbackPreferences);
                 var view = new PlayerView { DataContext = player };
                 // Exercise the real template at the minimum window width minus its navigation sidebar.
                 view.Measure(new Size(676, 540));
                 view.Arrange(new Rect(0, 0, 676, 540));
                 view.UpdateLayout();
                 var combos = Descendants(view).OfType<ComboBox>()
-                    .Where(c => AutomationProperties.GetName(c) is "Audio language" or "Subtitle track").ToArray();
-                Assert.Equal(2, combos.Length);
+                    .Where(c => AutomationProperties.GetName(c) is "Audio language" or "Subtitle track" or "Secondary subtitle track").ToArray();
+                Assert.Equal(3, combos.Length);
                 Assert.Equal("Audio language", AutomationProperties.GetName(combos[0]));
                 Assert.Equal("English · Original", Assert.IsType<PlaybackTrack>(combos[0].SelectedItem).Label);
                 Assert.Equal("Off", Assert.IsType<PlaybackTrack>(combos[1].SelectedItem).Label);
+                Assert.Equal("Off", Assert.IsType<PlaybackTrack>(combos[2].SelectedItem).Label);
                 Assert.All(combos, combo => Assert.InRange(combo.ActualWidth, 70, 110));
                 Assert.DoesNotContain(Descendants(view).OfType<Button>(), b => b.Command == player.RewindCommand || b.Command == player.ForwardCommand);
                 Assert.InRange(Assert.IsType<Border>(view.FindName("PlaybackControls")).ActualHeight, 60, 80);
@@ -79,6 +83,26 @@ public sealed partial class LibraryTemplateTests
                     Assert.True(combo.TranslatePoint(new Point(), view).Y >=
                         seekBar.TranslatePoint(new Point(0, seekBar.ActualHeight), view).Y);
                 });
+                playback.Emit(playback.Current with
+                {
+                    Revision = 1, SubtitleTrackId = 3, SecondarySubtitleTrackId = 4,
+                    SubtitleOverlay = new(new([new(0, 40_000, "Primary dialogue")]),
+                        new([new(0, 40_000, "Secondary translation")]))
+                });
+                view.UpdateLayout();
+                var primaryText = Assert.IsType<TextBlock>(view.FindName("PrimarySubtitleText"));
+                var secondaryText = Assert.IsType<TextBlock>(view.FindName("SecondarySubtitleText"));
+                Assert.Equal("Primary dialogue", primaryText.Text);
+                Assert.Equal("Secondary translation", secondaryText.Text);
+                Assert.Equal(44, primaryText.FontSize);
+                Assert.Equal(36, secondaryText.FontSize);
+                playbackPreferences.Apply(playbackPreferences.Current with { PrimarySubtitleFontSize = 52, SecondarySubtitleFontSize = 38 });
+                view.UpdateLayout();
+                Assert.Equal(52, primaryText.FontSize);
+                Assert.Equal(38, secondaryText.FontSize);
+                Assert.InRange(secondaryText.TranslatePoint(new Point(), primaryText).Y - primaryText.ActualHeight, 0, 4);
+                Assert.True(secondaryText.TranslatePoint(new Point(0, secondaryText.ActualHeight), view).Y <
+                    seekBar.TranslatePoint(new Point(), view).Y);
                 var bitmap = new RenderTargetBitmap(676, 540, 96, 96, PixelFormats.Pbgra32);
                 bitmap.Render(view);
                 var encoder = new PngBitmapEncoder();
@@ -353,7 +377,8 @@ public sealed partial class LibraryTemplateTests
         public PlaybackSnapshot Current { get; set; } = new(PlaybackState.Paused, "Example movie.mkv", 35_000, 120_000, true)
         {
             AudioTracks = [new(1, "Russian · Dub"), new(2, "English · Original")], AudioTrackId = 2,
-            SubtitleTracks = [new(-1, "Off"), new(3, "English · Full subtitles")]
+            SubtitleTracks = [new(-1, "Off"), new(3, "English · Full subtitles")],
+            SecondarySubtitleTracks = [new(-1, "Off"), new(3, "English · Full subtitles"), new(4, "Translation")]
         };
         public event EventHandler<PlaybackChangedEventArgs>? Changed;
         public void Emit(PlaybackSnapshot snapshot) { Current = snapshot; Changed?.Invoke(this, new(snapshot)); }
@@ -374,6 +399,8 @@ public sealed partial class LibraryTemplateTests
         public Task SetAspectRatioAsync(VideoAspectRatio aspectRatio) => Task.CompletedTask;
         public void DismissError() { }
         public Task LoadSubtitleAsync(string filePath) => Task.CompletedTask;
+        public Task SetSecondarySubtitleTrackAsync(int trackId) => Task.CompletedTask;
+        public Task LoadSecondarySubtitleAsync(string filePath) => Task.CompletedTask;
         public void Dispose() { }
     }
 }

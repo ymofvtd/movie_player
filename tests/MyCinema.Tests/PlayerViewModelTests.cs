@@ -479,6 +479,8 @@ public sealed class PlayerViewModelTests
         public Task SetAspectRatioAsync(VideoAspectRatio aspectRatio) { AspectRatio = aspectRatio; return Task.CompletedTask; }
         public void DismissError() { }
         public Task LoadSubtitleAsync(string path) => Task.CompletedTask;
+        public Task SetSecondarySubtitleTrackAsync(int trackId) => Task.CompletedTask;
+        public Task LoadSecondarySubtitleAsync(string filePath) => Task.CompletedTask;
         public Task PlayAsync() => Task.CompletedTask;
         public Task ReloadAsync() { ReloadedSnapshot = Current; return ReloadGate?.Task ?? Task.CompletedTask; }
         public void Pause() => Paused = true;

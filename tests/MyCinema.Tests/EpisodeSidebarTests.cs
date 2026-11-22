@@ -449,6 +449,8 @@ public sealed class EpisodeSidebarTests : IDisposable
         public Task SetAspectRatioAsync(VideoAspectRatio aspectRatio) => Task.CompletedTask;
         public void DismissError() { }
         public Task LoadSubtitleAsync(string filePath) => Task.CompletedTask;
+        public Task SetSecondarySubtitleTrackAsync(int trackId) => Task.CompletedTask;
+        public Task LoadSecondarySubtitleAsync(string filePath) => Task.CompletedTask;
         public void Dispose() { }
     }
     public void Dispose()

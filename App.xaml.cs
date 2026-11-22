@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MyCinema.Core.Interfaces;
+using MyCinema.Infrastructure.Services;
 using Person_Movie_Player.Services;
 using Person_Movie_Player.ViewModels;
 
@@ -46,6 +47,11 @@ public partial class App : Application
             MainWindow = _services.GetRequiredService<MainWindow>();
             MainWindow.Show();
             if (_activationRequested) ActivateMainWindow();
+            if (_services.GetRequiredService<IPlaybackSegmentService>() is PlaybackSegmentService timings)
+            {
+                var catalog = _services.GetRequiredService<LibraryStore>().Catalog;
+                await timings.MigrateLegacyAsync(catalog.Items.Keys.SelectMany(catalog.DirectFiles).Select(file => file.FilePath));
+            }
         }
         catch (Exception error)
         {
