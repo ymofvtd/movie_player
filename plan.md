@@ -23,7 +23,7 @@ It should automatically detect movies, television shows, seasons, episodes, and 
 
 The application must support playback progress tracking, automatic resume, subtitles, audio selection, full-screen playback, episode navigation, and manual library organization.
 
-The design should feel like a modern streaming platform while functioning entirely on the user's local computer..
+The design should feel like a modern streaming platform while functioning entirely on the user's local computer.
 
 ### Primary Goals
 
