@@ -25,7 +25,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             [NavigationDestination.Home] = home,
             [NavigationDestination.Movies] = new LibraryPageViewModel("Movies", "The big screen, right at home.", NavigationDestination.Movies, store, navigation),
             [NavigationDestination.Shows] = new LibraryPageViewModel("TV Shows", "One more episode, whenever you like.", NavigationDestination.Shows, store, navigation),
-            [NavigationDestination.Franchises] = new LibraryPageViewModel("Franchises", "Every film. One place.", NavigationDestination.Franchises, store, navigation),
+            [NavigationDestination.Franchises] = new LibraryPageViewModel("Franchises", "Shows and movies in watch order.", NavigationDestination.Franchises, store, navigation),
             [NavigationDestination.ContinueWatching] = new LibraryPageViewModel("Continue Watching", "Pick up where you left off.", NavigationDestination.ContinueWatching, store, navigation),
             [NavigationDestination.RecentlyAdded] = new LibraryPageViewModel("Recently Added", "Something new for movie night.", NavigationDestination.RecentlyAdded, store, navigation),
             [NavigationDestination.Settings] = settings,

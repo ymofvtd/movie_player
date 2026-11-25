@@ -46,8 +46,8 @@ public sealed class DatabaseTests : IDisposable
         }
         using (var services = Services()) await services.GetRequiredService<IDatabaseService>().InitializeAsync();
         using var connection = Open();
-        Assert.Equal(4L, Scalar(connection, "PRAGMA user_version;"));
-        Assert.Equal(4L, Scalar(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(5L, Scalar(connection, "PRAGMA user_version;"));
+        Assert.Equal(5L, Scalar(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
         Assert.Equal(6L, Scalar(connection, """
             SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN
                 ('LibraryRoots', 'LibraryItems', 'MediaFiles', 'PlaybackProgress', 'UserSettings', 'MetadataOverrides');
@@ -71,6 +71,8 @@ public sealed class DatabaseTests : IDisposable
         }
         // Remove only the v2 additions to obtain the exact v1 schema around populated v1 records.
         using (var connection = Open()) Scalar(connection, """
+            DROP TRIGGER FranchiseMoviePlacements_Prune;
+            DROP TABLE FranchiseMoviePlacements;
             DROP TABLE ScanSources;
             DROP INDEX IX_MediaFiles_Root;
             ALTER TABLE MediaFiles DROP COLUMN LibraryRootId;
@@ -86,8 +88,8 @@ public sealed class DatabaseTests : IDisposable
             Assert.Equal(progress, await services.GetRequiredService<IProgressRepository>().GetAsync(file.Id));
         }
         using var reopened = Open();
-        Assert.Equal(4L, Scalar(reopened, "PRAGMA user_version;"));
-        Assert.Equal(4L, Scalar(reopened, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(5L, Scalar(reopened, "PRAGMA user_version;"));
+        Assert.Equal(5L, Scalar(reopened, "SELECT COUNT(*) FROM SchemaMigrations;"));
         Assert.Equal("ok", Scalar(reopened, "PRAGMA integrity_check;"));
     }
 

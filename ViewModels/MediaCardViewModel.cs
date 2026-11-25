@@ -30,7 +30,7 @@ public sealed class MediaCardViewModel
         Subtitle = item.ItemType switch
         {
             LibraryItemType.Show => $"{catalog.Children(item.Id).Count} {(catalog.Children(item.Id).Count == 1 ? "season" : "seasons")} · {files.Select(f => f.LibraryItemId).Distinct().Count()} episodes",
-            LibraryItemType.Franchise => $"{catalog.Children(item.Id).Count(i => i.ItemType == LibraryItemType.Movie)} movies",
+            LibraryItemType.Franchise => FranchiseSubtitle(catalog.Children(item.Id)),
             LibraryItemType.Episode => $"S{item.SeasonNumber:00} · E{item.EpisodeNumber:00}" +
                 (item.EpisodeEndNumber > item.EpisodeNumber ? $"–{item.EpisodeEndNumber:00}" : ""),
             _ => item.ReleaseYear?.ToString() ?? "Year unknown"
@@ -56,6 +56,14 @@ public sealed class MediaCardViewModel
     public string AccessibleDescription => $"{Title}. {Kind}. {Subtitle}. {Availability}. {WatchState}. {ProgressLabel}";
     public IRelayCommand OpenCommand { get; }
     public override string ToString() => Title;
+
+    private static string FranchiseSubtitle(IReadOnlyList<LibraryItem> members)
+    {
+        var shows = members.Count(i => i.ItemType == LibraryItemType.Show);
+        var movies = members.Count - shows;
+        var films = $"{movies} {(movies == 1 ? "movie" : "movies")}";
+        return shows == 0 ? films : $"{shows} {(shows == 1 ? "show" : "shows")}" + (movies == 0 ? "" : $" · {films}");
+    }
 }
 
 public sealed record LibrarySection(string Title, IReadOnlyList<MediaCardViewModel> Cards, IRelayCommand? BrowseCommand = null)

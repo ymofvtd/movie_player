@@ -10,6 +10,8 @@ public sealed class LibraryCatalog
     private readonly ILookup<long, MediaFile> _files;
     private readonly Dictionary<string, MediaFile> _filesByPath;
     private readonly Dictionary<long, IReadOnlyList<MediaFile>> _descendantFiles = new();
+    private readonly FranchiseWatchOrder _franchises;
+    private readonly Dictionary<long, IReadOnlyList<LibraryItem>> _watchOrders;
     public LibraryCatalog(LibrarySnapshot snapshot)
     {
         var allItems = snapshot.Items.ToDictionary(i => i.Id);
@@ -33,6 +35,12 @@ public sealed class LibraryCatalog
         foreach (var item in snapshot.Items.Where(i => !affected.Contains(i.Id))) AddAncestors(retained, item.Id);
         Items = allItems.Where(pair => !affected.Contains(pair.Key) || retained.Contains(pair.Key))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
+        // Keep offline episodes as placement anchors while omitting them from playable results.
+        MoviePlacements = snapshot.FranchiseMoviePlacements;
+        _franchises = new FranchiseWatchOrder(allItems, MoviePlacements);
+        _watchOrders = Items.Values.Where(i => i.ItemType == LibraryItemType.Franchise)
+            .ToDictionary(i => i.Id, i => (IReadOnlyList<LibraryItem>)_franchises.Build(i.Id)
+                .Where(entry => Items.ContainsKey(entry.Id)).ToArray());
         Progress = snapshot.Progress.ToDictionary(p => p.MediaFileId);
         _children = Items.Values.ToLookup(i => i.ParentId ?? 0);
         _files = files.ToLookup(f => f.LibraryItemId);
@@ -44,6 +52,10 @@ public sealed class LibraryCatalog
 
     public IReadOnlyDictionary<long, LibraryItem> Items { get; }
     public IReadOnlyDictionary<long, PlaybackProgress> Progress { get; }
+    public IReadOnlyDictionary<long, long> MoviePlacements { get; }
+    public long? FranchiseOf(long id) => _franchises.FindFranchise(id);
+    public IReadOnlyList<LibraryItem> WatchOrder(long id) => _watchOrders.GetValueOrDefault(id) ?? [];
+    public IEnumerable<LibraryItem> ShowEpisodes(long id) => _franchises.Episodes(id).Where(i => Items.ContainsKey(i.Id));
     public MediaFile? FindFile(string? path) => string.IsNullOrWhiteSpace(path) ? null : _filesByPath.GetValueOrDefault(PathKey(path));
     private static string PathKey(string path)
     {
@@ -53,9 +65,11 @@ public sealed class LibraryCatalog
         return System.IO.Path.GetFullPath(value);
     }
     public IReadOnlyList<LibraryItem> Children(long id) => _children[id].OrderBy(i => i.SeasonNumber)
-        .ThenBy(i => i.EpisodeNumber).ThenBy(i => i.SortTitle, StringComparer.OrdinalIgnoreCase).ToArray();
+        .ThenBy(i => i.EpisodeNumber).ThenBy(i => i.SortTitle, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Id).ToArray();
     public IReadOnlyList<MediaFile> DirectFiles(long id) => _files[id].OrderBy(f => f.Edition, StringComparer.OrdinalIgnoreCase)
         .ThenBy(f => f.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
+    public IEnumerable<MediaFile> AvailableEditions(long id) => DirectFiles(id).Where(f => f.IsAvailable)
+        .OrderByDescending(f => Progress.GetValueOrDefault(f.Id)?.LastPlayedUtc ?? DateTimeOffset.MinValue);
     public IReadOnlyList<MediaFile> Files(long id) => _descendantFiles.GetValueOrDefault(id) ?? [];
     public bool IsAvailable(long id) => Files(id).Any(f => f.IsAvailable);
     public string WatchState(long id)

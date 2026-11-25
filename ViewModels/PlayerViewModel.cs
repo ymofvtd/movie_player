@@ -67,7 +67,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             episode => !IsChangingMedia && !IsOpening && episode is { CanPlay: true, IsActive: false } && Sidebar?.Contains(episode) == true);
         PreviousEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(-1), () => CanMoveEpisode(-1));
         NextEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1), () => CanMoveEpisode(1));
-        NextUpCommand = new AsyncRelayCommand(() => PlayNextUpAsync(AutomaticallySkipTimings), () => CanPlayNextUp);
+        NextUpCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1, AutomaticallySkipTimings), () => CanPlayNextUp);
         ReloadCommand = new AsyncRelayCommand(ReloadAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
         SkipIntroCommand = new RelayCommand(() => Skip(ActiveOpening), () => ShowSkipIntro);
         SkipCreditsCommand = new RelayCommand(() => Skip(ActiveOutro), () => ShowSkipCredits);
@@ -174,10 +174,11 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool ShowSkipCredits => CanShowSegment && ActiveOutro is not null;
     public bool ShowNextUp => !AreControlsLocked && !HasError && CanPlayNextUp &&
         (_snapshot.State == PlaybackState.Ended || CanShowSegment && ActiveOutro is not null);
-    public string NextUpLabel => Sidebar?.HasShow == true ? "Next episode" : "Next movie";
+    public string NextUpLabel => AdjacentTitles(1).FirstOrDefault()?.ItemType == LibraryItemType.Episode ? "Next episode" : "Next movie";
+    public bool HasTitleNavigation => Sidebar?.HasShow == true || ActiveFranchise() is not null;
     public string? TimingWarning => _segments.Warning;
     public bool HasTimingWarning => TimingWarning is not null;
-    private bool CanPlayNextUp => !IsChangingMedia && !IsOpening && NextUpFiles().Count > 0;
+    private bool CanPlayNextUp => CanMoveEpisode(1);
     public string? EpisodeNavigationMessage
     {
         get => _episodeNavigationMessage;
@@ -411,22 +412,22 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         if (_navigation.CurrentDestination != NavigationDestination.Player) Playback.Pause();
     }
 
-    private bool CanMoveEpisode(int direction) => !IsChangingMedia && !IsOpening && Sidebar?.AdjacentEpisodes(direction).Count > 0;
+    private bool CanMoveEpisode(int direction) => !IsChangingMedia && !IsOpening && AdjacentTitles(direction).Any();
 
-    private async Task MoveEpisodeAsync(int direction)
+    private async Task MoveEpisodeAsync(int direction, bool startOver = false)
     {
-        if (Sidebar is null) return;
-        foreach (var episode in Sidebar.AdjacentEpisodes(direction))
+        foreach (var title in AdjacentTitles(direction))
         {
-            foreach (var file in Sidebar.AvailableFiles(episode.Id))
+            var files = _library?.Catalog.AvailableEditions(title.Id) ?? Sidebar?.AvailableFiles(title.Id) ?? [];
+            foreach (var file in files)
             {
                 // Availability may have changed since the last scan; avoid filesystem IO on WPF's thread.
                 if (!await Task.Run(() => File.Exists(file.FilePath))) continue;
-                await OpenPathAsync(file.FilePath);
+                await OpenPathAsync(file.FilePath, startOver);
                 return;
             }
         }
-        EpisodeNavigationMessage = "No available episode in that direction. Reconnect the library drive or rescan in Settings.";
+        EpisodeNavigationMessage = "No available title in that direction. Reconnect the library drive or rescan in Settings.";
     }
 
     private void OnSidebarChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -440,33 +441,24 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PlayEpisodeCommand.NotifyCanExecuteChanged();
         PreviousEpisodeCommand.NotifyCanExecuteChanged();
         NextEpisodeCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(HasTitleNavigation));
         NotifySegmentCommands();
     }
 
-    private IReadOnlyList<MediaFile> NextUpFiles()
+    private (long FranchiseId, long TitleId)? ActiveFranchise()
     {
-        if (Sidebar?.HasShow == true)
-            return Sidebar.AdjacentEpisodes(1).SelectMany(e => Sidebar.AvailableFiles(e.Id)).ToArray();
         var catalog = _library?.Catalog;
         var file = catalog?.FindFile(FilePath);
-        if (file is null || !catalog!.Items.TryGetValue(file.LibraryItemId, out var movie) ||
-            movie is not { ItemType: LibraryItemType.Movie, ParentId: { } parentId } ||
-            !catalog.Items.TryGetValue(parentId, out var parent) || parent.ItemType != LibraryItemType.Franchise) return [];
-        return catalog.Children(parentId).SkipWhile(i => i.Id != movie.Id).Skip(1)
-            .Where(i => i.ItemType == LibraryItemType.Movie)
-            .SelectMany(i => catalog.DirectFiles(i.Id).Where(f => f.IsAvailable)
-                .OrderByDescending(f => catalog.Progress.GetValueOrDefault(f.Id)?.LastPlayedUtc ?? DateTimeOffset.MinValue)).ToArray();
+        return file is not null && catalog!.FranchiseOf(file.LibraryItemId) is { } id ? (id, file.LibraryItemId) : null;
     }
 
-    private async Task PlayNextUpAsync(bool startOver)
+    private IEnumerable<LibraryItem> AdjacentTitles(int direction)
     {
-        foreach (var file in NextUpFiles())
-        {
-            if (!await Task.Run(() => File.Exists(file.FilePath))) continue;
-            await OpenPathAsync(file.FilePath, startOver);
-            return;
-        }
-        EpisodeNavigationMessage = "The next title is unavailable. Reconnect the library drive or rescan in Settings.";
+        if (ActiveFranchise() is not { } active) return Sidebar?.AdjacentEpisodes(direction) ?? [];
+        var catalog = _library!.Catalog;
+        var order = catalog.WatchOrder(active.FranchiseId);
+        var entries = direction > 0 ? order : order.Reverse();
+        return entries.SkipWhile(i => i.Id != active.TitleId).Skip(1).Where(i => catalog.IsAvailable(i.Id));
     }
 
     private void Skip(PlaybackSegment? segment)
@@ -488,7 +480,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         OnPropertyChanged(nameof(NextUpLabel));
     }
 
-    private void OnLibraryChanged(object? sender, EventArgs e) => NotifySegmentCommands();
+    private void OnLibraryChanged(object? sender, EventArgs e) => NotifyEpisodeCommands();
 
     private void StartSegmentLoad()
     {

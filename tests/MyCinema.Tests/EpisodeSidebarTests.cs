@@ -375,6 +375,52 @@ public sealed class EpisodeSidebarTests : IDisposable
     }
 
     [Fact]
+    public async Task MixedFranchiseStartsInOrderAndNavigatesAcrossEpisodesMoviesAndShows()
+    {
+        await SetupAsync();
+        var services = _services!;
+        var repository = services.GetRequiredService<ILibraryRepository>();
+        var organization = services.GetRequiredService<ILibraryOrganizationService>();
+        var firstShow = Assert.Single(await repository.GetItemsAsync(LibraryItemType.Show));
+        var franchise = await organization.CreateFranchiseAsync("Series and films", firstShow.Id);
+        await organization.AssignFranchiseMemberAsync(_movie.LibraryItemId, franchise);
+        await organization.SetMoviePlacementAsync(_movie.LibraryItemId, _first.LibraryItemId);
+        var secondShow = await repository.SaveItemAsync(new()
+            { Title = "Sequel", ItemType = LibraryItemType.Show, ParentId = franchise });
+        var season = await repository.SaveItemAsync(new()
+            { Title = "Season 1", ItemType = LibraryItemType.Season, SeasonNumber = 1, ParentId = secondShow.Id });
+        var episode = await repository.SaveItemAsync(new() { Title = "Premiere", ItemType = LibraryItemType.Episode,
+            SeasonNumber = 1, EpisodeNumber = 1, ParentId = season.Id });
+        var path = Path.Combine(_directory, "sequel.mkv");
+        await File.WriteAllTextAsync(path, "Fake media");
+        await repository.SaveFileAsync(new() { LibraryItemId = episode.Id, FilePath = path });
+        await Store.RefreshAsync();
+
+        var details = services.GetRequiredService<MediaDetailsViewModel>();
+        details.Show(franchise);
+        Assert.Equal(new[] { firstShow.Id, _movie.LibraryItemId, firstShow.Id, secondShow.Id },
+            details.FranchiseRows.Select(row => row.Id));
+        await details.PlayFranchiseCommand.ExecuteAsync(null);
+        Assert.Equal(_first.FilePath, _playback.Current.FilePath);
+        _playback.Position(95_000);
+        Assert.Equal("Next movie", Player.NextUpLabel);
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        Assert.Equal(_movie.FilePath, _playback.Current.FilePath);
+        await Player.FlushProgressAsync();
+        Assert.True((await Progress.GetAsync(_first.Id))!.IsCompleted);
+        await Store.RefreshAsync();
+        Assert.Equal("Continue watch order", details.FranchisePlayLabel);
+        Assert.Equal("Next episode", Player.NextUpLabel);
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        Assert.Equal(_second.FilePath, _playback.Current.FilePath);
+        await Player.PreviousEpisodeCommand.ExecuteAsync(null);
+        Assert.Equal(_movie.FilePath, _playback.Current.FilePath);
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_third);
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        Assert.Equal(path, _playback.Current.FilePath);
+    }
+
+    [Fact]
     public async Task AutomaticOutroStartsNextAvailableEpisodeFromBeginningAndSkipsItsIntroAcrossSeasons()
     {
         await SetupAsync();

@@ -111,8 +111,10 @@ public sealed class FolderArtworkTests : IDisposable
         using (var connection = new SqliteConnection($"Data Source={Paths.DatabasePath};Pooling=False"))
         {
             connection.Open(); using var command = connection.CreateCommand(); command.CommandText = """
+                DROP TRIGGER FranchiseMoviePlacements_Prune;
+                DROP TABLE FranchiseMoviePlacements;
                 ALTER TABLE LibraryItems DROP COLUMN IsPosterOverride;
-                DELETE FROM SchemaMigrations WHERE Version=4;
+                DELETE FROM SchemaMigrations WHERE Version>=4;
                 PRAGMA user_version=3;
                 """; command.ExecuteNonQuery();
         }

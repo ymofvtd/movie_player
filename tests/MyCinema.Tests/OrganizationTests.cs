@@ -157,19 +157,55 @@ public sealed class OrganizationTests : IDisposable
         var group = Assert.Single(await library.GetItemsAsync(LibraryItemType.Franchise));
         var movies = (await library.GetItemsAsync(LibraryItemType.Movie)).ToArray();
         var first = movies.Single(i => i.Title == "First"); var second = movies.Single(i => i.Title == "Second");
-        await organization.MoveMovieAsync(second.Id, -1);
+        await organization.MoveFranchiseMemberAsync(second.Id, -1);
         await organization.SaveAsync(new(second.Id, "Renamed second", LibraryItemType.Movie, ParentId: group.Id));
         await Scan(services);
         var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
         Assert.Equal(new[] { second.Id, first.Id }, catalog.Children(group.Id).Select(i => i.Id));
         var newGroup = await organization.CreateFranchiseAsync("Other", first.Id);
         Assert.Equal(newGroup, (await library.GetItemAsync(first.Id))!.ParentId);
-        await organization.AssignMovieAsync(first.Id, group.Id);
+        await organization.AssignFranchiseMemberAsync(first.Id, group.Id);
         await organization.RemoveFranchiseAsync(group.Id);
         await Scan(services);
         Assert.Null(await library.GetItemAsync(group.Id));
         Assert.Null((await library.GetItemAsync(first.Id))!.ParentId); Assert.Null((await library.GetItemAsync(second.Id))!.ParentId);
         Assert.Equal(2, (await library.GetAllFilesAsync()).Count);
+    }
+
+    [Fact]
+    public async Task MoviePlacementSurvivesRescansWithAMissingAnchorAndClearsWhenShowLeavesFranchise()
+    {
+        var firstPath = Video(@"Original\Season 01\Original.S01E01.mkv");
+        var anchorPath = Video(@"Original\Season 01\Original.S01E02.mkv");
+        var lastPath = Video(@"Original\Season 02\Original.S02E01.mkv");
+        var moviePath = Video(@"A Movie (2001)\Movie.mkv");
+        using var services = Services();
+        await Scan(services);
+        var library = services.GetRequiredService<ILibraryRepository>();
+        var organization = services.GetRequiredService<ILibraryOrganizationService>();
+        var first = (await library.FindFileAsync(firstPath))!;
+        var anchor = (await library.FindFileAsync(anchorPath))!;
+        var last = (await library.FindFileAsync(lastPath))!;
+        var movie = (await library.FindFileAsync(moviePath))!;
+        var show = Assert.Single(await library.GetItemsAsync(LibraryItemType.Show));
+        var group = await organization.CreateFranchiseAsync("Franchise", show.Id);
+        await organization.AssignFranchiseMemberAsync(movie.LibraryItemId, group);
+        await organization.SetMoviePlacementAsync(movie.LibraryItemId, anchor.LibraryItemId);
+        await Scan(services);
+        var catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.Equal(new[] { first.LibraryItemId, anchor.LibraryItemId, movie.LibraryItemId, last.LibraryItemId },
+            catalog.WatchOrder(group).Select(i => i.Id));
+
+        File.Delete(anchorPath);
+        await Scan(services);
+        catalog = new LibraryCatalog(await library.GetSnapshotAsync());
+        Assert.Equal(new[] { first.LibraryItemId, movie.LibraryItemId, last.LibraryItemId }, catalog.WatchOrder(group).Select(i => i.Id));
+        Assert.Equal(anchor.LibraryItemId, catalog.MoviePlacements[movie.LibraryItemId]);
+        await organization.AssignFranchiseMemberAsync(show.Id, null);
+        await Assert.ThrowsAsync<ArgumentException>(() => organization.SetMoviePlacementAsync(movie.LibraryItemId, anchor.LibraryItemId));
+        var snapshot = await library.GetSnapshotAsync();
+        Assert.Empty(snapshot.FranchiseMoviePlacements);
+        Assert.Equal(2, snapshot.Items.Count(i => i.ParentId == show.Id));
     }
 
     [Fact]
@@ -223,6 +259,8 @@ public sealed class OrganizationTests : IDisposable
         using (var connection = new SqliteConnection($"Data Source={Paths.DatabasePath};Pooling=False"))
         {
             connection.Open(); using var command = connection.CreateCommand(); command.CommandText = """
+                DROP TRIGGER FranchiseMoviePlacements_Prune;
+                DROP TABLE FranchiseMoviePlacements;
                 ALTER TABLE ScanSources RENAME TO NewSources;
                 CREATE TABLE ScanSources(SourceKey TEXT PRIMARY KEY NOT NULL,
                     LibraryRootId INTEGER NOT NULL REFERENCES LibraryRoots(Id) ON DELETE RESTRICT,

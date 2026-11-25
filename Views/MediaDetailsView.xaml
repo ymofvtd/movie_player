@@ -52,8 +52,31 @@
                 <TextBlock Text="No episodes in this season. Scan your library in Settings to discover files." TextWrapping="Wrap" Visibility="{Binding HasNoEpisodes, Converter={StaticResource BooleanToVisibility}}" Foreground="{DynamicResource SecondaryTextBrush}" />
             </StackPanel>
             <StackPanel Visibility="{Binding IsFranchise, Converter={StaticResource BooleanToVisibility}}">
-                <TextBlock Text="Movies in this collection" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <ItemsControl ItemsSource="{Binding Movies}" ItemTemplate="{StaticResource MediaCardTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+                <TextBlock Text="Watch order" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
+                <Button Content="{Binding FranchisePlayLabel}" Command="{Binding PlayFranchiseCommand}" Style="{StaticResource PrimaryButtonStyle}"
+                        HorizontalAlignment="Left" Margin="0,0,0,16" ToolTip="Start from the first available unwatched title" />
+                <ItemsControl ItemsSource="{Binding FranchiseRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,0,8">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Play" Style="{StaticResource SecondaryButtonStyle}" VerticalAlignment="Center"
+                                            Margin="12,0,0,0" Command="{Binding DataContext.Player.OpenLibraryFileCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding File}" AutomationProperties.HelpText="{Binding Label}" />
+                                    <StackPanel>
+                                        <Button Content="{Binding Title}" Command="{Binding OpenCommand}" Style="{StaticResource SecondaryButtonStyle}"
+                                                HorizontalAlignment="Left" Padding="8,4" ToolTip="Open title details">
+                                            <Button.ContentTemplate>
+                                                <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate>
+                                            </Button.ContentTemplate>
+                                        </Button>
+                                        <TextBlock Text="{Binding Label}" Margin="8,5,0,0" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
             <Border Style="{StaticResource CardStyle}" Visibility="{Binding IsMissing, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="This item is no longer in the library. Go back and refresh the library." TextWrapping="Wrap" /></Border>
         </StackPanel>

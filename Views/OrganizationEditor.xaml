@@ -12,8 +12,8 @@
                         <TextBlock Text="Description" /><TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MetadataTextBoxStyle}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" MaxHeight="180" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Description" />
                         <TextBlock Text="Classification" Margin="0,0,0,5" /><ComboBox ItemsSource="{Binding Classifications}" SelectedItem="{Binding Classification}" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Classification" />
                         <TextBlock Text="{Binding ClassificationHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,14" />
-                        <StackPanel Visibility="{Binding IsMovie, Converter={StaticResource BooleanToVisibility}}">
-                            <TextBlock Text="Franchise" Margin="0,0,0,5" /><ComboBox ItemsSource="{Binding Parents}" SelectedItem="{Binding SelectedParent}" DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Movie franchise" Margin="0,0,0,14" />
+                        <StackPanel Visibility="{Binding CanChooseFranchise, Converter={StaticResource BooleanToVisibility}}">
+                            <TextBlock Text="Franchise" Margin="0,0,0,5" /><ComboBox ItemsSource="{Binding Parents}" SelectedItem="{Binding SelectedParent}" DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Franchise" Margin="0,0,0,14" />
                         </StackPanel>
                         <StackPanel Visibility="{Binding IsEpisode, Converter={StaticResource BooleanToVisibility}}">
                             <TextBlock Text="Show" Margin="0,0,0,5" /><ComboBox ItemsSource="{Binding Parents}" SelectedItem="{Binding SelectedParent}" DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Episode show" Margin="0,0,0,14" />
@@ -23,10 +23,37 @@
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}" Margin="0,14,0,0" Visibility="{Binding CanCreateFranchise, Converter={StaticResource BooleanToVisibility}}">
-                    <StackPanel><TextBlock Text="Create a franchise" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="Create a collection and add this movie to it." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,6" /><TextBox Text="{Binding NewFranchiseTitle, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MetadataTextBoxStyle}" AutomationProperties.Name="New franchise title" /><Button Content="Create franchise" Command="{Binding CreateFranchiseCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
+                    <StackPanel><TextBlock Text="Create a franchise" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="Create a franchise with this title as its first member." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,6" /><TextBox Text="{Binding NewFranchiseTitle, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MetadataTextBoxStyle}" AutomationProperties.Name="New franchise title" /><Button Content="Create franchise" Command="{Binding CreateFranchiseCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}" Margin="0,14,0,0" Visibility="{Binding IsFranchise, Converter={StaticResource BooleanToVisibility}}">
-                    <StackPanel><TextBlock Text="Manage franchise movies" FontSize="18" FontWeight="SemiBold" /><ComboBox ItemsSource="{Binding MovieChoices}" SelectedItem="{Binding SelectedMovie}" DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" Margin="0,14,0,12" AutomationProperties.Name="Franchise movie" /><WrapPanel><Button Content="Add to franchise" Command="{Binding AddMovieCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /><Button Content="Remove from franchise" Command="{Binding RemoveMovieCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /><Button Content="Move up" Command="{Binding MoveUpCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /><Button Content="Move down" Command="{Binding MoveDownCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" /></WrapPanel><Separator Margin="0,14" /><TextBlock Text="Remove this grouping to return all its movies to the library. Video files and progress are kept." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12" /><Button Content="Remove franchise grouping" Command="{Binding RemoveFranchiseCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Manage franchise titles" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Add a show or movie" Margin="0,14,0,5" />
+                        <DockPanel Margin="0,0,0,14">
+                            <Button DockPanel.Dock="Right" Content="Add to franchise" Command="{Binding AddMemberCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0" />
+                            <ComboBox ItemsSource="{Binding Candidates}" SelectedItem="{Binding SelectedCandidate}" TextSearch.TextPath="Label"
+                                      DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Show or movie to add" />
+                        </DockPanel>
+                        <TextBlock Text="Titles in this franchise" Margin="0,0,0,5" />
+                        <ComboBox ItemsSource="{Binding Members}" SelectedItem="{Binding SelectedMember}" DisplayMemberPath="Label"
+                                  Style="{StaticResource LibraryComboStyle}" Margin="0,0,0,12" AutomationProperties.Name="Franchise title" />
+                        <WrapPanel>
+                            <Button Content="Move up" Command="{Binding MoveUpCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+                            <Button Content="Move down" Command="{Binding MoveDownCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+                            <Button Content="Remove from franchise" Command="{Binding RemoveMemberCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,0,8" />
+                        </WrapPanel>
+                        <StackPanel Visibility="{Binding CanPlaceMovie, Converter={StaticResource BooleanToVisibility}}" Margin="0,8,0,0">
+                            <TextBlock Text="Play this movie after an episode" Margin="0,0,0,5" />
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Save placement" Command="{Binding SavePlacementCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0" />
+                                <ComboBox ItemsSource="{Binding Placements}" SelectedItem="{Binding SelectedPlacement}" TextSearch.TextPath="Label"
+                                          DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Episode after which to play the movie" />
+                            </DockPanel>
+                        </StackPanel>
+                        <Separator Margin="0,14" />
+                        <TextBlock Text="Removing this grouping returns its shows and movies to the library and keeps their watch progress." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12" />
+                        <Button Content="Remove franchise grouping" Command="{Binding RemoveFranchiseCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" />
+                    </StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}" Margin="0,14,0,0" Visibility="{Binding CanMerge, Converter={StaticResource BooleanToVisibility}}">
                     <StackPanel><TextBlock Text="Combine duplicate titles" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="Move this title's files into the selected title as editions or parts. Watch progress stays with each file; the selected title's metadata is kept." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,12" /><ComboBox ItemsSource="{Binding MergeTargets}" SelectedItem="{Binding SelectedMergeTarget}" DisplayMemberPath="Label" Style="{StaticResource LibraryComboStyle}" AutomationProperties.Name="Merge into title" Margin="0,0,0,12" /><Button Content="Merge into selected title" Command="{Binding MergeCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>

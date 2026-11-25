@@ -169,8 +169,8 @@ public sealed class LibraryBrowserTests : IDisposable
         var details = Shell.Details;
         Assert.True(details.IsFranchise);
         Assert.False(details.PlayCommand.CanExecute(null));
-        Assert.Equal(2, details.Movies.Count);
-        details.Movies.Single(c => c.Id == _alpha.Id).OpenCommand.Execute(null);
+        Assert.Equal(2, details.FranchiseRows.Count);
+        details.FranchiseRows.Single(c => c.Id == _alpha.Id).OpenCommand.Execute(null);
         Assert.Equal(2, details.Files.Count);
         details.SelectedFile = details.Files.Single(f => f.File.Id == _extended.Id);
         await details.PlayCommand.ExecuteAsync(null);

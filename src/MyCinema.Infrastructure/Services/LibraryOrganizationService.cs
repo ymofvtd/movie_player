@@ -23,7 +23,7 @@ public sealed class LibraryOrganizationService(SqliteDatabase database) : ILibra
             var item = Get(c, t, edit.Id);
             if (edit.ItemType != item.ItemType) item = Reclassify(c, t, item, edit.ItemType);
             long? parent = null;
-            if (item.ItemType == LibraryItemType.Movie && edit.ParentId is { } franchise)
+            if (item.ItemType is LibraryItemType.Movie or LibraryItemType.Show && edit.ParentId is { } franchise)
             {
                 RequireType(Get(c, t, franchise), LibraryItemType.Franchise);
                 parent = franchise;
@@ -41,9 +41,8 @@ public sealed class LibraryOrganizationService(SqliteDatabase database) : ILibra
                 SeasonNumber = item.ItemType is LibraryItemType.Episode or LibraryItemType.Season ? edit.SeasonNumber : null,
                 EpisodeNumber = item.ItemType == LibraryItemType.Episode ? edit.EpisodeNumber : null,
                 EpisodeEndNumber = item.ItemType == LibraryItemType.Episode ? edit.EpisodeEndNumber : null };
-            // Retain a franchise's established ordinal when renaming one of its movies.
-            if (parent == item.ParentId && item.SortTitle.Length > 9 && item.SortTitle[8] == '|')
-                updated = updated with { SortTitle = item.SortTitle[..9] + updated.Title };
+            if (parent.HasValue && parent == item.ParentId && item.ItemType is LibraryItemType.Movie or LibraryItemType.Show)
+                updated = updated with { SortTitle = item.SortTitle };
             Write(c, t, updated);
             if (item.ItemType == LibraryItemType.Season)
                 Execute(c, t, "UPDATE LibraryItems SET SeasonNumber=$number, IsManualOverride=1 WHERE ParentId=$id;",
@@ -74,32 +73,65 @@ public sealed class LibraryOrganizationService(SqliteDatabase database) : ILibra
             return 0;
         }, cancellationToken);
 
-    public Task<long> CreateFranchiseAsync(string title, long? movieId = null, CancellationToken cancellationToken = default)
+    public Task<long> CreateFranchiseAsync(string title, long? memberId = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         return database.WriteAsync((c, t) =>
         {
             var id = Write(c, t, new LibraryItem { Title = title.Trim(), ItemType = LibraryItemType.Franchise });
-            if (movieId is { } movie) Assign(c, t, movie, id);
+            if (memberId is { } member) Assign(c, t, member, id);
             return id;
         }, cancellationToken);
     }
 
-    public Task AssignMovieAsync(long movieId, long? franchiseId, CancellationToken cancellationToken = default) =>
-        database.WriteAsync((c, t) => { Assign(c, t, movieId, franchiseId); return 0; }, cancellationToken);
+    public Task AssignFranchiseMemberAsync(long memberId, long? franchiseId, CancellationToken cancellationToken = default) =>
+        database.WriteAsync((c, t) => { Assign(c, t, memberId, franchiseId); return 0; }, cancellationToken);
 
-    public Task MoveMovieAsync(long movieId, int direction, CancellationToken cancellationToken = default) =>
+    public Task MoveFranchiseMemberAsync(long memberId, int direction, CancellationToken cancellationToken = default) =>
+        database.WriteAsync((c, t) =>
+        {
+            var member = Get(c, t, memberId);
+            RequireFranchiseMember(member);
+            if (member.ParentId is not { } parent) throw new ArgumentException("Choose a title in this franchise.");
+            var children = All(c, t).Where(i => i.ParentId == parent).OrderBy(i => i.SortTitle, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => i.Id).ToList();
+            var placements = new Dictionary<long, long>();
+            using (var command = Sql.Command(c, t, """
+                SELECT MovieId, AfterEpisodeId FROM FranchiseMoviePlacements
+                JOIN LibraryItems ON Id = MovieId WHERE ParentId = $parent;
+                """, ("$parent", parent)))
+            using (var reader = command.ExecuteReader())
+                while (reader.Read()) placements.Add(reader.GetInt64(0), reader.GetInt64(1));
+            var index = children.FindIndex(i => i.Id == memberId);
+            var next = index + Math.Sign(direction);
+            while (next >= 0 && next < children.Count &&
+                placements.GetValueOrDefault(children[next].Id) != placements.GetValueOrDefault(memberId))
+                next += Math.Sign(direction);
+            if (next == index || next < 0 || next >= children.Count) return 0;
+            (children[index], children[next]) = (children[next], children[index]);
+            for (var n = 0; n < children.Count; n++) Write(c, t, children[n] with { SortTitle = $"{n:D8}|{children[n].Title}" });
+            return 0;
+        }, cancellationToken);
+
+    public Task SetMoviePlacementAsync(long movieId, long? afterEpisodeId, CancellationToken cancellationToken = default) =>
         database.WriteAsync((c, t) =>
         {
             var movie = Get(c, t, movieId);
             RequireType(movie, LibraryItemType.Movie);
-            if (movie.ParentId is not { } parent) throw new ArgumentException("Choose a movie in this franchise.");
-            var children = All(c, t).Where(i => i.ParentId == parent).OrderBy(i => i.SortTitle, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(i => i.Id).ToList();
-            var index = children.FindIndex(i => i.Id == movieId);
-            var next = Math.Clamp(index + Math.Sign(direction), 0, children.Count - 1);
-            (children[index], children[next]) = (children[next], children[index]);
-            for (var n = 0; n < children.Count; n++) Write(c, t, children[n] with { SortTitle = $"{n:D8}|{children[n].Title}" });
+            if (movie.ParentId is not { } franchiseId) throw new ArgumentException("Add this movie to a franchise first.");
+            if (afterEpisodeId is { } episodeId)
+            {
+                using var command = Sql.Command(c, t, """
+                    INSERT INTO FranchiseMoviePlacements (MovieId, AfterEpisodeId)
+                    SELECT $movie, episode.Id FROM LibraryItems episode
+                    JOIN LibraryItems season ON season.Id = episode.ParentId
+                    JOIN LibraryItems show ON show.Id = season.ParentId
+                    WHERE episode.Id = $episode AND episode.ItemType = 5 AND show.ParentId = $franchise
+                    ON CONFLICT(MovieId) DO UPDATE SET AfterEpisodeId = excluded.AfterEpisodeId;
+                    """, ("$movie", movieId), ("$episode", episodeId), ("$franchise", franchiseId));
+                if (command.ExecuteNonQuery() == 0) throw new ArgumentException("Choose an episode in this franchise.");
+            }
+            else Execute(c, t, "DELETE FROM FranchiseMoviePlacements WHERE MovieId=$movie;", ("$movie", movieId));
             return 0;
         }, cancellationToken);
 
@@ -109,7 +141,8 @@ public sealed class LibraryOrganizationService(SqliteDatabase database) : ILibra
             var group = Get(c, t, franchiseId);
             RequireType(group, LibraryItemType.Franchise);
             if (HasFiles(c, t, franchiseId)) throw new ArgumentException("Reclassify this title as a movie before removing its grouping.");
-            foreach (var movie in All(c, t).Where(i => i.ParentId == franchiseId)) Write(c, t, movie with { ParentId = null, SortTitle = movie.Title });
+            foreach (var member in All(c, t).Where(i => i.ParentId == franchiseId))
+                Write(c, t, member with { ParentId = null, SortTitle = member.Title });
             // A null source remembers the removed grouping, so scanning cannot recreate it.
             Delete(c, t, franchiseId, null);
             return 0;
@@ -193,12 +226,17 @@ public sealed class LibraryOrganizationService(SqliteDatabase database) : ILibra
         return root;
     }
 
-    private static void Assign(SqliteConnection c, SqliteTransaction t, long movieId, long? franchiseId)
+    private static void Assign(SqliteConnection c, SqliteTransaction t, long memberId, long? franchiseId)
     {
-        var movie = Get(c, t, movieId);
-        RequireType(movie, LibraryItemType.Movie);
+        var member = Get(c, t, memberId);
+        RequireFranchiseMember(member);
         if (franchiseId is { } id) RequireType(Get(c, t, id), LibraryItemType.Franchise);
-        Write(c, t, movie with { ParentId = franchiseId, SortTitle = movie.Title });
+        if (member.ParentId != franchiseId) Write(c, t, member with { ParentId = franchiseId, SortTitle = member.Title });
+    }
+    private static void RequireFranchiseMember(LibraryItem item)
+    {
+        if (item.ItemType is not (LibraryItemType.Movie or LibraryItemType.Show))
+            throw new ArgumentException("Choose a movie or show.");
     }
     private static void RequireType(LibraryItem item, LibraryItemType type)
     { if (item.ItemType != type) throw new ArgumentException($"Choose a {type.ToString().ToLowerInvariant()}."); }

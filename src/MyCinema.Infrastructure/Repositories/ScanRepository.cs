@@ -98,7 +98,7 @@ public sealed class ScanRepository(SqliteDatabase database) : IScanRepository
                             alias = parentId;
                         else if (parentItem.IsManualOverride && parentItem.ItemType == LibraryItemType.Franchise)
                         {
-                            if (proposed.ItemType is LibraryItemType.Season or LibraryItemType.Show or LibraryItemType.Franchise) alias = parentId;
+                            if (proposed.ItemType is LibraryItemType.Season or LibraryItemType.Franchise) alias = parentId;
                             else proposed = proposed with { ItemType = LibraryItemType.Movie, SeasonNumber = null, EpisodeNumber = null, EpisodeEndNumber = null, IsManualOverride = true };
                         }
                         else if (parentItem.IsManualOverride && parentItem.ItemType == LibraryItemType.Show &&
@@ -254,7 +254,7 @@ public sealed class ScanRepository(SqliteDatabase database) : IScanRepository
     }
 
     private static bool Allows(LibraryItemType parent, LibraryItemType child) => (parent, child) is
-        (LibraryItemType.Franchise, LibraryItemType.Movie) or (LibraryItemType.Show, LibraryItemType.Season) or
+        (LibraryItemType.Franchise, LibraryItemType.Movie or LibraryItemType.Show) or (LibraryItemType.Show, LibraryItemType.Season) or
         (LibraryItemType.Season, LibraryItemType.Episode);
 
     private static long WriteItem(SqliteConnection connection, SqliteTransaction transaction, LibraryItem item)

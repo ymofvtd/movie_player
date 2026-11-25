@@ -14,6 +14,7 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
     private long? _itemId;
     private readonly Dictionary<long, (long? FileId, long? SeasonId)> _selections = new();
     private readonly WatchHistoryService? _history;
+    private MediaFile? _franchiseStartFile;
     public MediaDetailsViewModel(LibraryStore store, INavigationService navigation, PlayerViewModel player, WatchHistoryService? history = null,
         OrganizationEditorViewModel? editor = null)
         : base("Library details", "Choose something to watch.")
@@ -31,6 +32,10 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
         {
             if (SelectedFile is { } file) await Player.StartOverFileCommand.ExecuteAsync(file.File);
         }, () => SelectedFile?.File.IsAvailable == true && Player.StartOverFileCommand.CanExecute(SelectedFile.File));
+        PlayFranchiseCommand = new AsyncRelayCommand(async () =>
+        {
+            if (_franchiseStartFile is { } file) await Player.OpenLibraryFileCommand.ExecuteAsync(file);
+        }, () => _franchiseStartFile is { } file && Player.OpenLibraryFileCommand.CanExecute(file));
         MarkWatchedCommand = new AsyncRelayCommand(() => EditProgressAsync(true), () => _history is not null && SelectedFile is not null);
         MarkUnwatchedCommand = new AsyncRelayCommand(() => EditProgressAsync(false), () => _history is not null && SelectedFile is not null);
         ResetProgressCommand = new AsyncRelayCommand(() => EditProgressAsync(null), () => _history is not null && SelectedFile is not null);
@@ -46,6 +51,7 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
     public override string Description => Card is null ? "Choose something to watch." : Summary;
     public IAsyncRelayCommand PlayCommand { get; }
     public IAsyncRelayCommand StartOverCommand { get; }
+    public IAsyncRelayCommand PlayFranchiseCommand { get; }
     public IAsyncRelayCommand MarkWatchedCommand { get; }
     public IAsyncRelayCommand MarkUnwatchedCommand { get; }
     public IAsyncRelayCommand ResetProgressCommand { get; }
@@ -66,7 +72,8 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
     [ObservableProperty] private IReadOnlyList<SeasonChoice> _seasons = [];
     [ObservableProperty] private SeasonChoice? _selectedSeason;
     [ObservableProperty] private IReadOnlyList<MediaCardViewModel> _episodes = [];
-    [ObservableProperty] private IReadOnlyList<MediaCardViewModel> _movies = [];
+    [ObservableProperty] private IReadOnlyList<FranchiseWatchRow> _franchiseRows = [];
+    [ObservableProperty] private string _franchisePlayLabel = "Play in order";
     [ObservableProperty] private bool _hasNoEpisodes;
     public void Show(long? id, long? fileId = null)
     {
@@ -82,7 +89,8 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
         if (_itemId is not { } id || !catalog.Items.TryGetValue(id, out var item))
         {
             IsMissing = true; Card = null; IsPlayable = IsShow = IsFranchise = false;
-            Files = []; SelectedFile = null; Seasons = []; SelectedSeason = null; Episodes = []; Movies = [];
+            Files = []; SelectedFile = null; Seasons = []; SelectedSeason = null; Episodes = [];
+            LoadFranchise(catalog, []);
             return;
         }
         IsMissing = false;
@@ -103,15 +111,52 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
             .Select(i => new SeasonChoice(i.Id, $"Season {i.SeasonNumber:00}")).ToArray();
         SelectedSeason = Seasons.FirstOrDefault(s => s.Id == selectedSeasonId) ?? Seasons.FirstOrDefault();
         UpdateEpisodes();
+        LoadFranchise(catalog, IsFranchise ? catalog.WatchOrder(id) : []);
         UpdateProgressCommands();
-        Movies = catalog.Children(id).Where(i => i.ItemType == LibraryItemType.Movie)
-            .Select(i => new MediaCardViewModel(i, catalog, _navigation)).ToArray();
+    }
+
+    private void LoadFranchise(LibraryCatalog catalog, IReadOnlyList<LibraryItem> order)
+    {
+        var available = order.Where(i => catalog.IsAvailable(i.Id)).ToArray();
+        var firstUnwatched = available.FirstOrDefault(i => catalog.WatchState(i.Id) != "Watched");
+        var start = firstUnwatched ?? available.FirstOrDefault();
+        _franchiseStartFile = start is null ? null : catalog.AvailableEditions(start.Id).FirstOrDefault();
+        FranchisePlayLabel = firstUnwatched is not null && (firstUnwatched.Id != available[0].Id ||
+            ResumePolicy.CanResume(catalog.Progress.GetValueOrDefault(_franchiseStartFile!.Id)))
+            ? "Continue watch order" : "Play in order";
+        PlayFranchiseCommand.NotifyCanExecuteChanged();
+
+        var rows = new List<FranchiseWatchRow>();
+        long? ShowId(LibraryItem item) => item.ItemType == LibraryItemType.Episode && item.ParentId is { } parent
+            ? catalog.Items.GetValueOrDefault(parent)?.ParentId : null;
+        for (var index = 0; index < order.Count;)
+        {
+            var first = order[index];
+            var end = index + 1;
+            var showId = ShowId(first);
+            while (showId.HasValue && end < order.Count && ShowId(order[end]) == showId) end++;
+            var title = showId is { } show ? catalog.Items[show] : first;
+            var file = order.Skip(index).Take(end - index).SelectMany(i => catalog.AvailableEditions(i.Id)).FirstOrDefault();
+            var label = showId.HasValue ? EpisodeRange(first, order[end - 1]) :
+                title.ReleaseYear is { } year ? $"Movie · {year}" : "Movie";
+            rows.Add(new(title.Id, title.Title, label, file, new RelayCommand(() => _navigation.NavigateToItem(title.Id))));
+            index = end;
+        }
+        FranchiseRows = rows;
+    }
+
+    private static string EpisodeRange(LibraryItem first, LibraryItem last)
+    {
+        var start = $"S{first.SeasonNumber:00}E{first.EpisodeNumber:00}";
+        var end = $"S{last.SeasonNumber:00}E{(last.EpisodeEndNumber ?? last.EpisodeNumber):00}";
+        return start == end ? start : $"{start} – {end}";
     }
     partial void OnSelectedFileChanged(MediaFileChoice? value) => UpdateProgressCommands();
     private void UpdateProgressCommands()
     {
         PlayCommand.NotifyCanExecuteChanged();
         StartOverCommand.NotifyCanExecuteChanged();
+        PlayFranchiseCommand.NotifyCanExecuteChanged();
         MarkWatchedCommand.NotifyCanExecuteChanged();
         MarkUnwatchedCommand.NotifyCanExecuteChanged();
         ResetProgressCommand.NotifyCanExecuteChanged();
@@ -149,3 +194,5 @@ public sealed partial class MediaDetailsViewModel : PageViewModel, IDisposable
         Player.StartOverFileCommand.PropertyChanged -= OnPlayerChanged;
     }
 }
+
+public sealed record FranchiseWatchRow(long Id, string Title, string Label, MediaFile? File, IRelayCommand OpenCommand);

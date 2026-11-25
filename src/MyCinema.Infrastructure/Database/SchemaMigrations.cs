@@ -114,6 +114,47 @@ internal static class SchemaMigrations
         ALTER TABLE LibraryItems ADD COLUMN IsPosterOverride INTEGER NOT NULL DEFAULT 0
             CHECK(IsPosterOverride IN (0, 1));
         UPDATE LibraryItems SET IsPosterOverride=1 WHERE IsManualOverride=1 AND PosterPath IS NOT NULL;
+        """),
+        (5, "Mixed franchises and episode-based movie placement", """
+        DROP TRIGGER LibraryItems_ParentOnInsert;
+        DROP TRIGGER LibraryItems_ParentOnUpdate;
+        CREATE TRIGGER LibraryItems_ParentOnInsert BEFORE INSERT ON LibraryItems
+        WHEN NEW.ParentId IS NOT NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'Invalid library hierarchy') WHERE NOT EXISTS (
+                SELECT 1 FROM LibraryItems p WHERE p.Id = NEW.ParentId AND (
+                    (p.ItemType = 1 AND NEW.ItemType IN (2, 3)) OR
+                    (p.ItemType = 3 AND NEW.ItemType = 4) OR
+                    (p.ItemType = 4 AND NEW.ItemType = 5)));
+        END;
+        CREATE TRIGGER LibraryItems_ParentOnUpdate BEFORE UPDATE OF ParentId, ItemType ON LibraryItems
+        BEGIN
+            SELECT RAISE(ABORT, 'Invalid library hierarchy') WHERE NEW.ParentId IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM LibraryItems p WHERE p.Id = NEW.ParentId AND (
+                    (p.ItemType = 1 AND NEW.ItemType IN (2, 3)) OR
+                    (p.ItemType = 3 AND NEW.ItemType = 4) OR
+                    (p.ItemType = 4 AND NEW.ItemType = 5)));
+            SELECT RAISE(ABORT, 'Item type conflicts with existing children') WHERE EXISTS (
+                SELECT 1 FROM LibraryItems c WHERE c.ParentId = NEW.Id AND NOT (
+                    (NEW.ItemType = 1 AND c.ItemType IN (2, 3)) OR
+                    (NEW.ItemType = 3 AND c.ItemType = 4) OR
+                    (NEW.ItemType = 4 AND c.ItemType = 5)));
+        END;
+        CREATE TABLE FranchiseMoviePlacements (
+            MovieId INTEGER PRIMARY KEY REFERENCES LibraryItems(Id) ON DELETE CASCADE,
+            AfterEpisodeId INTEGER NOT NULL REFERENCES LibraryItems(Id) ON DELETE CASCADE
+        );
+        CREATE TRIGGER FranchiseMoviePlacements_Prune AFTER UPDATE OF ParentId, ItemType ON LibraryItems
+        WHEN OLD.ParentId IS NOT NEW.ParentId OR OLD.ItemType <> NEW.ItemType
+        BEGIN
+            DELETE FROM FranchiseMoviePlacements
+            WHERE NOT EXISTS (
+                SELECT 1 FROM LibraryItems movie
+                JOIN LibraryItems episode ON episode.Id = AfterEpisodeId AND episode.ItemType = 5
+                JOIN LibraryItems season ON season.Id = episode.ParentId
+                JOIN LibraryItems show ON show.Id = season.ParentId AND show.ParentId = movie.ParentId
+                WHERE movie.Id = MovieId AND movie.ItemType = 2);
+        END;
         """)
     ];
 }

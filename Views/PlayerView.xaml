@@ -138,16 +138,16 @@
                         AutomationProperties.Name="Lock controls" />
                 <CheckBox DockPanel.Dock="Right" Content="Auto-skip intro / outro" IsChecked="{Binding AutomaticallySkipTimings, Mode=TwoWay}"
                           VerticalAlignment="Center" Margin="12,0,0,0" FontSize="12"
-                          ToolTip="Skip intro and outro automatically. During an outro, start the next available episode and skip its marked intro. Turns off when MyCinema restarts."
+                          ToolTip="Skip intro and outro automatically. During episode credits, advance in watch order. Turns off when MyCinema restarts."
                           AutomationProperties.Name="Skip intro and outro automatically" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
-                            Visibility="{Binding Sidebar.HasShow, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
+                            Visibility="{Binding HasTitleNavigation, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}">
                     <Button Content="&#xE892;" FontFamily="Segoe MDL2 Assets" Command="{Binding PreviousEpisodeCommand}"
-                            Style="{StaticResource PlayerButtonStyle}" Padding="8,9" ToolTip="Previous available episode (P)"
-                            AutomationProperties.Name="Previous episode" />
+                            Style="{StaticResource PlayerButtonStyle}" Padding="8,9" ToolTip="Previous title in watch order (P)"
+                            AutomationProperties.Name="Previous title" />
                     <Button Content="&#xE893;" FontFamily="Segoe MDL2 Assets" Command="{Binding NextEpisodeCommand}"
                             Style="{StaticResource PlayerButtonStyle}" Padding="8,9" Margin="5,0,0,0"
-                            ToolTip="Next available episode, including the following season (N)" AutomationProperties.Name="Next episode" />
+                            ToolTip="Next title in watch order (N)" AutomationProperties.Name="Next title" />
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding MediaTitle}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />

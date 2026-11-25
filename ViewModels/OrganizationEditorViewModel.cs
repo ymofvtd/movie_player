@@ -36,16 +36,32 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
         }, () => _item?.IsPosterOverride == true);
         CreateFranchiseCommand = Command(async () =>
         {
-            var id = await _organization.CreateFranchiseAsync(NewFranchiseTitle, _item!.ItemType == LibraryItemType.Movie ? _item.Id : null);
+            var id = await _organization.CreateFranchiseAsync(NewFranchiseTitle, _item!.Id);
             await RefreshAsync("Franchise created."); _navigation.NavigateToItem(id);
-        });
-        AddMovieCommand = Command(async () => { await _organization.AssignMovieAsync(MovieId(), _item!.Id); await RefreshAsync("Movie added."); });
-        RemoveMovieCommand = Command(async () => { RequireMember(); await _organization.AssignMovieAsync(MovieId(), null); await RefreshAsync("Movie removed from this franchise."); });
-        MoveUpCommand = Command(() => MoveAsync(-1)); MoveDownCommand = Command(() => MoveAsync(1));
+        }, () => CanCreateFranchise);
+        AddMemberCommand = Command(async () =>
+        {
+            var id = SelectedCandidate!.Id!.Value;
+            await _organization.AssignFranchiseMemberAsync(id, _item!.Id);
+            await RefreshAsync("Title added.");
+            SelectedMember = Members.FirstOrDefault(i => i.Id == id);
+        }, () => IsFranchise && SelectedCandidate is not null);
+        RemoveMemberCommand = Command(async () =>
+        {
+            await _organization.AssignFranchiseMemberAsync(SelectedMember!.Id!.Value, null);
+            await RefreshAsync("Title removed from this franchise.");
+        }, () => SelectedMember is not null);
+        MoveUpCommand = Command(() => MoveAsync(-1), () => SelectedMember is not null);
+        MoveDownCommand = Command(() => MoveAsync(1), () => SelectedMember is not null);
+        SavePlacementCommand = Command(async () =>
+        {
+            await _organization.SetMoviePlacementAsync(SelectedMember!.Id!.Value, SelectedPlacement!.Id);
+            await RefreshAsync("Movie placement saved.");
+        }, () => CanPlaceMovie && SelectedPlacement is not null);
         RemoveFranchiseCommand = Command(async () =>
         {
             await _organization.RemoveFranchiseAsync(_item!.Id);
-            await RefreshAsync("Franchise grouping removed. Its movies are still in the library.");
+            await RefreshAsync("Franchise grouping removed. Its shows and movies are still in the library.");
             _navigation.NavigateTo(MyCinema.Core.Navigation.NavigationDestination.Franchises);
         });
         MergeCommand = Command(async () =>
@@ -70,16 +86,17 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
         finally { IsBusy = false; }
     }, () => _item is not null && !IsBusy && (canExecute?.Invoke() ?? true));
     private IEnumerable<IAsyncRelayCommand> Commands => [SaveCommand, ChoosePosterCommand, RemovePosterCommand, UseFolderPosterCommand, CreateFranchiseCommand,
-        AddMovieCommand, RemoveMovieCommand, MoveUpCommand, MoveDownCommand, RemoveFranchiseCommand, MergeCommand, SplitCommand];
+        AddMemberCommand, RemoveMemberCommand, MoveUpCommand, MoveDownCommand, SavePlacementCommand, RemoveFranchiseCommand, MergeCommand, SplitCommand];
     public IAsyncRelayCommand SaveCommand { get; }
     public IAsyncRelayCommand ChoosePosterCommand { get; }
     public IAsyncRelayCommand RemovePosterCommand { get; }
     public IAsyncRelayCommand UseFolderPosterCommand { get; }
     public IAsyncRelayCommand CreateFranchiseCommand { get; }
-    public IAsyncRelayCommand AddMovieCommand { get; }
-    public IAsyncRelayCommand RemoveMovieCommand { get; }
+    public IAsyncRelayCommand AddMemberCommand { get; }
+    public IAsyncRelayCommand RemoveMemberCommand { get; }
     public IAsyncRelayCommand MoveUpCommand { get; }
     public IAsyncRelayCommand MoveDownCommand { get; }
+    public IAsyncRelayCommand SavePlacementCommand { get; }
     public IAsyncRelayCommand RemoveFranchiseCommand { get; }
     public IAsyncRelayCommand MergeCommand { get; }
     public IAsyncRelayCommand SplitCommand { get; }
@@ -99,17 +116,23 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
     [ObservableProperty] private IReadOnlyList<OrganizationChoice> _parents = [];
     [ObservableProperty] private OrganizationChoice? _selectedParent;
     [ObservableProperty] private string _newFranchiseTitle = "";
-    [ObservableProperty] private IReadOnlyList<OrganizationChoice> _movieChoices = [];
-    [ObservableProperty] private OrganizationChoice? _selectedMovie;
+    [ObservableProperty] private IReadOnlyList<OrganizationChoice> _candidates = [];
+    [ObservableProperty] private OrganizationChoice? _selectedCandidate;
+    [ObservableProperty] private IReadOnlyList<OrganizationChoice> _members = [];
+    [ObservableProperty] private OrganizationChoice? _selectedMember;
+    [ObservableProperty] private IReadOnlyList<OrganizationChoice> _placements = [];
+    [ObservableProperty] private OrganizationChoice? _selectedPlacement;
     [ObservableProperty] private IReadOnlyList<OrganizationChoice> _mergeTargets = [];
     [ObservableProperty] private OrganizationChoice? _selectedMergeTarget;
     [ObservableProperty] private IReadOnlyList<MediaFileChoice> _splitFiles = [];
     [ObservableProperty] private MediaFileChoice? _selectedSplitFile;
     [ObservableProperty] private string _splitTitle = "";
-    public bool IsMovie => Classification == LibraryItemType.Movie;
+    public bool CanChooseFranchise => Classification is LibraryItemType.Movie or LibraryItemType.Show;
     public bool IsEpisode => Classification == LibraryItemType.Episode;
     public bool IsFranchise => _item?.ItemType == LibraryItemType.Franchise;
-    public bool CanCreateFranchise => _item?.ItemType == LibraryItemType.Movie;
+    public bool CanCreateFranchise => _item?.ItemType is LibraryItemType.Movie or LibraryItemType.Show;
+    public bool CanPlaceMovie => SelectedMember?.Id is { } id &&
+        _store.Catalog.Items.GetValueOrDefault(id)?.ItemType == LibraryItemType.Movie;
     public bool CanMerge => _item?.ItemType is LibraryItemType.Movie or LibraryItemType.Episode or LibraryItemType.Uncategorized;
     public bool CanSplit => CanMerge && SplitFiles.Count > 1;
     public string ClassificationHelp => Classification == _item?.ItemType ? "Manual edits are retained during rescans." : Classification switch
@@ -126,7 +149,7 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
                 (value == LibraryItemType.Episode ? LibraryItemType.Show : LibraryItemType.Franchise))
                 .OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase).Select(i => new OrganizationChoice(i.Id, i.Title))).ToArray();
         SelectedParent = Parents.FirstOrDefault();
-        OnPropertyChanged(nameof(IsMovie)); OnPropertyChanged(nameof(IsEpisode)); OnPropertyChanged(nameof(ClassificationHelp));
+        OnPropertyChanged(nameof(CanChooseFranchise)); OnPropertyChanged(nameof(IsEpisode)); OnPropertyChanged(nameof(ClassificationHelp));
     }
     public void Load(long id, bool force = false)
     {
@@ -147,11 +170,20 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
             SeasonNumber = item.SeasonNumber?.ToString() ?? ""; EpisodeNumber = item.EpisodeNumber?.ToString() ?? "";
             EpisodeEndNumber = item.EpisodeEndNumber?.ToString() ?? "";
         }
-        var selectedMovieId = SelectedMovie?.Id;
-        MovieChoices = _store.Catalog.Items.Values.Where(i => i.ItemType == LibraryItemType.Movie)
-            .OrderBy(i => i.ParentId != id).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase)
-            .Select(i => new OrganizationChoice(i.Id, (i.ParentId == id ? "In franchise · " : "") + i.Title)).ToArray();
-        SelectedMovie = MovieChoices.FirstOrDefault(m => m.Id == selectedMovieId) ?? MovieChoices.FirstOrDefault();
+        var candidateId = preserveDraft ? SelectedCandidate?.Id : null;
+        var memberId = preserveDraft ? SelectedMember?.Id : null;
+        var placement = preserveDraft ? SelectedPlacement : null;
+        var catalog = _store.Catalog;
+        Candidates = IsFranchise ? catalog.Items.Values
+            .Where(i => i.ItemType is LibraryItemType.Movie or LibraryItemType.Show && i.ParentId != id)
+            .OrderBy(i => i.ParentId.HasValue).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase)
+            .Select(i => new OrganizationChoice(i.Id, $"{i.Title} · {i.ItemType}" +
+                (i.ParentId is { } parent ? $" · {catalog.Items[parent].Title}" : ""))).ToArray() : [];
+        SelectedCandidate = Candidates.FirstOrDefault(i => i.Id == candidateId);
+        Members = IsFranchise ? catalog.Children(id).Select(i =>
+            new OrganizationChoice(i.Id, $"{i.Title} · {i.ItemType}")).ToArray() : [];
+        SelectedMember = Members.FirstOrDefault(i => i.Id == memberId) ?? Members.FirstOrDefault();
+        LoadPlacements(SelectedMember?.Id == memberId ? placement : null);
         MergeTargets = _store.Catalog.Items.Values.Where(i => i.Id != id && i.ItemType == item.ItemType)
             .OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase).Select(i => new OrganizationChoice(i.Id, i.Title +
                 (string.IsNullOrWhiteSpace(_store.Catalog.Context(i)) ? "" : " · " + _store.Catalog.Context(i)))).ToArray();
@@ -174,10 +206,39 @@ public sealed partial class OrganizationEditorViewModel : ObservableObject
     }
     private static int? Number(string value, string label) => string.IsNullOrWhiteSpace(value) ? null :
         int.TryParse(value, out var number) ? number : throw new ArgumentException($"{label} must be a whole number, or blank.");
-    private long MovieId() => SelectedMovie?.Id ?? throw new ArgumentException("Choose a movie.");
-    private void RequireMember()
-    { if (_store.Catalog.Items[MovieId()].ParentId != _item!.Id) throw new ArgumentException("Choose a movie already in this franchise."); }
-    private async Task MoveAsync(int direction) { RequireMember(); await _organization.MoveMovieAsync(MovieId(), direction); await RefreshAsync("Movie order updated."); }
+    partial void OnSelectedCandidateChanged(OrganizationChoice? value) => AddMemberCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedPlacementChanged(OrganizationChoice? value) => SavePlacementCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedMemberChanged(OrganizationChoice? value)
+    {
+        LoadPlacements();
+        OnPropertyChanged(nameof(CanPlaceMovie));
+        RemoveMemberCommand.NotifyCanExecuteChanged();
+        MoveUpCommand.NotifyCanExecuteChanged();
+        MoveDownCommand.NotifyCanExecuteChanged();
+        SavePlacementCommand.NotifyCanExecuteChanged();
+    }
+
+    private void LoadPlacements(OrganizationChoice? draft = null)
+    {
+        if (!CanPlaceMovie || _item is null) { Placements = []; SelectedPlacement = null; return; }
+        var catalog = _store.Catalog;
+        var saved = catalog.MoviePlacements.TryGetValue(SelectedMember!.Id!.Value, out var id) ? id : (long?)null;
+        var choices = new List<OrganizationChoice> { new(null, "Use franchise order") };
+        foreach (var show in catalog.Children(_item.Id).Where(i => i.ItemType == LibraryItemType.Show))
+            choices.AddRange(catalog.ShowEpisodes(show.Id).Select(i =>
+                new OrganizationChoice(i.Id, $"{show.Title} · S{i.SeasonNumber:00} · {i.Title}")));
+        if (saved.HasValue && choices.All(i => i.Id != saved))
+            choices.Add(new(saved, "Saved episode · unavailable"));
+        Placements = choices;
+        SelectedPlacement = choices.FirstOrDefault(i => i.Id == (draft is null ? saved : draft.Id)) ??
+            choices.First(i => i.Id == saved);
+    }
+
+    private async Task MoveAsync(int direction)
+    {
+        await _organization.MoveFranchiseMemberAsync(SelectedMember!.Id!.Value, direction);
+        await RefreshAsync("Franchise order updated.");
+    }
     private async Task RefreshAsync(string message) { await _store.RefreshAsync(); Message = string.IsNullOrEmpty(_store.ErrorMessage) ? message : "Saved. " + _store.ErrorMessage; }
 }
 

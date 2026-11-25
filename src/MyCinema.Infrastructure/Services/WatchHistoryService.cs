@@ -120,19 +120,21 @@ public sealed class WatchHistoryService : IDisposable
     {
         var nextFile = await _library.FindFileAsync(nextPath).ConfigureAwait(false);
         if (nextFile is null || nextFile.LibraryItemId == previousFile.LibraryItemId) return false;
-        var previous = await _library.GetItemAsync(previousFile.LibraryItemId).ConfigureAwait(false);
-        var next = await _library.GetItemAsync(nextFile.LibraryItemId).ConfigureAwait(false);
-        if (previous is { ItemType: LibraryItemType.Movie, ParentId: { } franchiseId } &&
-            next is { ItemType: LibraryItemType.Movie } && next.ParentId == franchiseId)
+        var snapshot = await _library.GetSnapshotAsync().ConfigureAwait(false);
+        var items = snapshot.Items.ToDictionary(i => i.Id);
+        var previous = items.GetValueOrDefault(previousFile.LibraryItemId);
+        var next = items.GetValueOrDefault(nextFile.LibraryItemId);
+        var franchises = new FranchiseWatchOrder(items, snapshot.FranchiseMoviePlacements);
+        if (franchises.FindFranchise(previousFile.LibraryItemId) is { } franchiseId &&
+            franchises.FindFranchise(nextFile.LibraryItemId) == franchiseId)
         {
-            var franchise = await _library.GetItemAsync(franchiseId).ConfigureAwait(false);
-            return franchise?.ItemType == LibraryItemType.Franchise &&
-                StringComparer.OrdinalIgnoreCase.Compare(next.SortTitle, previous.SortTitle) > 0;
+            var order = franchises.Build(franchiseId);
+            return order.SkipWhile(i => i.Id != previousFile.LibraryItemId).Skip(1).Any(i => i.Id == nextFile.LibraryItemId);
         }
         if (previous is not { ItemType: LibraryItemType.Episode, ParentId: { } previousSeasonId } ||
             next is not { ItemType: LibraryItemType.Episode, ParentId: { } nextSeasonId }) return false;
-        var previousSeason = await _library.GetItemAsync(previousSeasonId).ConfigureAwait(false);
-        var nextSeason = await _library.GetItemAsync(nextSeasonId).ConfigureAwait(false);
+        var previousSeason = items.GetValueOrDefault(previousSeasonId);
+        var nextSeason = items.GetValueOrDefault(nextSeasonId);
         if (previousSeason is not { ItemType: LibraryItemType.Season, ParentId: { } showId } ||
             nextSeason is not { ItemType: LibraryItemType.Season } || nextSeason.ParentId != showId) return false;
         var previousNumber = previousSeason.SeasonNumber ?? previous.SeasonNumber;
