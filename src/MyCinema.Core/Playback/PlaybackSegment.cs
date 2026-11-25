@@ -13,5 +13,6 @@ public sealed record PlaybackSegment(PlaybackSegmentKind Kind, long StartMs, lon
 
 public sealed record PlaybackSegmentData(IReadOnlyList<PlaybackSegment> Segments, string? Warning = null)
 {
+    public bool AutoSkipIntro { get; init; }
     public static PlaybackSegmentData Empty { get; } = new([]);
 }

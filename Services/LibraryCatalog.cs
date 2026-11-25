@@ -9,6 +9,7 @@ public sealed class LibraryCatalog
     private readonly ILookup<long, LibraryItem> _children;
     private readonly ILookup<long, MediaFile> _files;
     private readonly Dictionary<string, MediaFile> _filesByPath;
+    private readonly HashSet<long> _fillerEpisodes;
     private readonly Dictionary<long, IReadOnlyList<MediaFile>> _descendantFiles = new();
     private readonly FranchiseWatchOrder _franchises;
     private readonly Dictionary<long, IReadOnlyList<LibraryItem>> _watchOrders;
@@ -45,6 +46,10 @@ public sealed class LibraryCatalog
         _children = Items.Values.ToLookup(i => i.ParentId ?? 0);
         _files = files.ToLookup(f => f.LibraryItemId);
         _filesByPath = files.ToDictionary(f => PathKey(f.FilePath), StringComparer.OrdinalIgnoreCase);
+        _fillerEpisodes = files.Where(f => f.IsAvailable &&
+            Items.GetValueOrDefault(f.LibraryItemId)?.ItemType == LibraryItemType.Episode &&
+            System.IO.Path.GetFileNameWithoutExtension(f.FilePath).Contains("[FILLER]", StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.LibraryItemId).ToHashSet();
         ContinueWatchingFiles = files.Where(f => f.IsAvailable && ResumePolicy.CanResume(Progress.GetValueOrDefault(f.Id)))
             .OrderByDescending(f => Progress[f.Id].LastPlayedUtc).ToArray();
         foreach (var id in Items.Keys) CollectFiles(id, new HashSet<long>());
@@ -72,6 +77,7 @@ public sealed class LibraryCatalog
         .OrderByDescending(f => Progress.GetValueOrDefault(f.Id)?.LastPlayedUtc ?? DateTimeOffset.MinValue);
     public IReadOnlyList<MediaFile> Files(long id) => _descendantFiles.GetValueOrDefault(id) ?? [];
     public bool IsAvailable(long id) => Files(id).Any(f => f.IsAvailable);
+    public bool IsFillerEpisode(long id) => _fillerEpisodes.Contains(id);
     public string WatchState(long id)
     {
         var files = Files(id);

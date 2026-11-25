@@ -10,6 +10,7 @@ public sealed class PlayerEpisodeViewModel : ObservableObject
     private long _position;
     private long _duration;
     private bool _watched;
+    private bool _isFiller;
 
     public PlayerEpisodeViewModel(LibraryItem item, MediaFile? file, LibraryCatalog catalog, bool isActive)
     {
@@ -26,6 +27,7 @@ public sealed class PlayerEpisodeViewModel : ObservableObject
     internal LibraryItem Item { get; }
     public void RefreshProgress(LibraryCatalog catalog)
     {
+        IsFiller = catalog.IsFillerEpisode(Id);
         _watched = catalog.WatchState(Id) == "Watched";
         var progress = File is null ? null : catalog.Progress.GetValueOrDefault(File.Id);
         _position = progress?.PositionMs ?? 0;
@@ -39,6 +41,7 @@ public sealed class PlayerEpisodeViewModel : ObservableObject
     public MediaFile? File { get; }
     public bool CanPlay => File is not null;
     public bool IsActive { get; }
+    public bool IsFiller { get => _isFiller; private set => SetProperty(ref _isFiller, value); }
     public string StateLabel => !CanPlay ? "Unavailable" : _watched ? "Watched" : _position > 0 ? "In progress" : "Unwatched";
     public string ProgressLabel => _duration <= 0 ? "Runtime unknown" : _position > 0 ?
         $"{PlaybackMath.FormatTime(_position)} / {PlaybackMath.FormatTime(_duration)}" : PlaybackMath.FormatTime(_duration);

@@ -19,6 +19,7 @@ public sealed class MediaCardViewModel
             season.ParentId is { } showId && catalog.Items.TryGetValue(showId, out var show)) PosterPath = show.PosterPath;
         Context = catalog.Context(item);
         IsAvailable = catalog.IsAvailable(item.Id);
+        IsFiller = catalog.IsFillerEpisode(item.Id);
         WatchState = catalog.WatchState(item.Id);
         var resumeFile = catalog.ContinueWatchingFiles.FirstOrDefault(f => f.LibraryItemId == item.Id);
         OpenCommand = new RelayCommand(() => navigation.NavigateToItem(item.Id, preferResumeFile ? resumeFile?.Id : null));
@@ -52,8 +53,9 @@ public sealed class MediaCardViewModel
     public double ProgressPercent { get; }
     public string ProgressLabel { get; }
     public bool IsAvailable { get; }
+    public bool IsFiller { get; }
     public string Availability => IsAvailable ? "Available" : "Unavailable";
-    public string AccessibleDescription => $"{Title}. {Kind}. {Subtitle}. {Availability}. {WatchState}. {ProgressLabel}";
+    public string AccessibleDescription => $"{Title}. {Kind}. {Subtitle}.{(IsFiller ? " Filler." : "")} {Availability}. {WatchState}. {ProgressLabel}";
     public IRelayCommand OpenCommand { get; }
     public override string ToString() => Title;
 

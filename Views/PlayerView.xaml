@@ -167,6 +167,10 @@
         </Grid>
         <StackPanel x:Name="SegmentActions" Grid.Row="1" Orientation="Horizontal"
                     VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="24,16">
+            <Button Content="Skip filler" Command="{Binding SkipFillerCommand}"
+                    Visibility="{Binding ShowSkipFiller, Converter={StaticResource BooleanToVisibility}}"
+                    Style="{StaticResource SecondaryButtonStyle}" MinWidth="120" Padding="20,12" Margin="0,0,10,0"
+                    ToolTip="Jump past filler to the next available title in watch order" AutomationProperties.Name="Skip filler" />
             <Button Content="{Binding SkipIntroLabel}" Command="{Binding SkipIntroCommand}"
                     Visibility="{Binding ShowSkipIntro, Converter={StaticResource BooleanToVisibility}}"
                     Style="{StaticResource SecondaryButtonStyle}" MinWidth="120" Padding="20,12" Margin="0,0,10,0"

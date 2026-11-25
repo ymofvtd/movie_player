@@ -67,6 +67,8 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
             episode => !IsChangingMedia && !IsOpening && episode is { CanPlay: true, IsActive: false } && Sidebar?.Contains(episode) == true);
         PreviousEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(-1), () => CanMoveEpisode(-1));
         NextEpisodeCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1), () => CanMoveEpisode(1));
+        SkipFillerCommand = new AsyncRelayCommand(
+            () => MoveEpisodeAsync(1, skipFiller: true), () => ShowSkipFiller);
         NextUpCommand = new AsyncRelayCommand(() => MoveEpisodeAsync(1, AutomaticallySkipTimings), () => CanPlayNextUp);
         ReloadCommand = new AsyncRelayCommand(ReloadAsync, () => HasMedia && !IsOpening && !IsChangingMedia);
         SkipIntroCommand = new RelayCommand(() => Skip(ActiveOpening), () => ShowSkipIntro);
@@ -79,6 +81,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PlayEpisodeCommand.PropertyChanged += OnOpenCommandChanged;
         PreviousEpisodeCommand.PropertyChanged += OnOpenCommandChanged;
         NextEpisodeCommand.PropertyChanged += OnOpenCommandChanged;
+        SkipFillerCommand.PropertyChanged += OnOpenCommandChanged;
         NextUpCommand.PropertyChanged += OnOpenCommandChanged;
         ReloadCommand.PropertyChanged += OnOpenCommandChanged;
         if (_library is not null) _library.Changed += OnLibraryChanged;
@@ -137,6 +140,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public IAsyncRelayCommand<PlayerEpisodeViewModel> PlayEpisodeCommand { get; }
     public IAsyncRelayCommand PreviousEpisodeCommand { get; }
     public IAsyncRelayCommand NextEpisodeCommand { get; }
+    public IAsyncRelayCommand SkipFillerCommand { get; }
     public IAsyncRelayCommand NextUpCommand { get; }
     public IAsyncRelayCommand ReloadCommand { get; }
     public IRelayCommand SkipIntroCommand { get; }
@@ -172,6 +176,20 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     public bool ShowSkipIntro => CanShowSegment && ActiveOpening is not null;
     public string SkipIntroLabel => ActiveOpening?.Kind == PlaybackSegmentKind.Recap ? "Skip recap" : "Skip intro";
     public bool ShowSkipCredits => CanShowSegment && ActiveOutro is not null;
+    public bool ShowSkipFiller
+    {
+        get
+        {
+            if (AreControlsLocked || HasError || IsChangingMedia || IsOpening || _library is null) return false;
+            var catalog = _library.Catalog;
+            var active = catalog.FindFile(FilePath);
+            if (active is null) return false;
+            var upcoming = AdjacentTitles(1);
+            return (catalog.IsFillerEpisode(active.LibraryItemId) ||
+                    upcoming.FirstOrDefault() is { } next && catalog.IsFillerEpisode(next.Id)) &&
+                upcoming.Any(title => !catalog.IsFillerEpisode(title.Id));
+        }
+    }
     public bool ShowNextUp => !AreControlsLocked && !HasError && CanPlayNextUp &&
         (_snapshot.State == PlaybackState.Ended || CanShowSegment && ActiveOutro is not null);
     public string NextUpLabel => AdjacentTitles(1).FirstOrDefault()?.ItemType == LibraryItemType.Episode ? "Next episode" : "Next movie";
@@ -188,7 +206,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     private bool IsChangingMedia => OpenFileCommand?.IsRunning == true || OpenLibraryFileCommand?.IsRunning == true ||
         StartOverFileCommand?.IsRunning == true || PlayEpisodeCommand?.IsRunning == true ||
         PreviousEpisodeCommand?.IsRunning == true || NextEpisodeCommand?.IsRunning == true || NextUpCommand?.IsRunning == true ||
-        ReloadCommand?.IsRunning == true;
+        SkipFillerCommand?.IsRunning == true || ReloadCommand?.IsRunning == true;
     public IAsyncRelayCommand<PlaybackTrack> SelectAudioTrackCommand { get; }
     public IAsyncRelayCommand<PlaybackTrack> SelectSubtitleTrackCommand { get; }
     public IAsyncRelayCommand LoadSubtitleCommand { get; }
@@ -414,10 +432,11 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
 
     private bool CanMoveEpisode(int direction) => !IsChangingMedia && !IsOpening && AdjacentTitles(direction).Any();
 
-    private async Task MoveEpisodeAsync(int direction, bool startOver = false)
+    private async Task MoveEpisodeAsync(int direction, bool startOver = false, bool skipFiller = false)
     {
         foreach (var title in AdjacentTitles(direction))
         {
+            if (skipFiller && _library?.Catalog.IsFillerEpisode(title.Id) == true) continue;
             var files = _library?.Catalog.AvailableEditions(title.Id) ?? Sidebar?.AvailableFiles(title.Id) ?? [];
             foreach (var file in files)
             {
@@ -472,10 +491,12 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
     {
         SkipIntroCommand.NotifyCanExecuteChanged();
         SkipCreditsCommand.NotifyCanExecuteChanged();
+        SkipFillerCommand.NotifyCanExecuteChanged();
         NextUpCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ShowSkipIntro));
         OnPropertyChanged(nameof(SkipIntroLabel));
         OnPropertyChanged(nameof(ShowSkipCredits));
+        OnPropertyChanged(nameof(ShowSkipFiller));
         OnPropertyChanged(nameof(ShowNextUp));
         OnPropertyChanged(nameof(NextUpLabel));
     }
@@ -609,9 +630,10 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
 
     private void UpdateAutomaticSkipping()
     {
-        if (_disposed || !AutomaticallySkipTimings || _isSeeking || HasError || !CanSeek ||
+        if (_disposed || (!AutomaticallySkipTimings && !_segments.AutoSkipIntro) || _isSeeking || HasError || !CanSeek ||
             _snapshot.State != PlaybackState.Playing || IsTimingEditorOpen) return;
-        var segment = _segments.Segments.FirstOrDefault(s => s.Kind is PlaybackSegmentKind.Intro or PlaybackSegmentKind.Outro &&
+        var segment = _segments.Segments.FirstOrDefault(s =>
+            (s.Kind == PlaybackSegmentKind.Intro || AutomaticallySkipTimings && s.Kind == PlaybackSegmentKind.Outro) &&
             s.Contains(_snapshot.PositionMs, _snapshot.DurationMs));
         if (segment is null) { _automaticSegment = null; return; }
         if (segment == _automaticSegment) return;
@@ -669,6 +691,7 @@ public sealed class PlayerViewModel : PageViewModel, IDisposable
         PlayEpisodeCommand.PropertyChanged -= OnOpenCommandChanged;
         PreviousEpisodeCommand.PropertyChanged -= OnOpenCommandChanged;
         NextEpisodeCommand.PropertyChanged -= OnOpenCommandChanged;
+        SkipFillerCommand.PropertyChanged -= OnOpenCommandChanged;
         NextUpCommand.PropertyChanged -= OnOpenCommandChanged;
         ReloadCommand.PropertyChanged -= OnOpenCommandChanged;
         _segmentCancellation?.Cancel();

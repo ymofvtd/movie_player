@@ -214,12 +214,26 @@ public sealed class PlayerViewModelTests
         Assert.False(player.ShowSkipIntro);
     }
 
-    private sealed class FixedSegments : IPlaybackSegmentService
+    private sealed class FixedSegments(bool autoSkipIntro = false) : IPlaybackSegmentService
     {
         public Task SaveAsync(string path, IReadOnlyList<PlaybackSegment> segments, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<PlaybackSegmentData> LoadAsync(string path, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PlaybackSegmentData([new(PlaybackSegmentKind.Intro, 10_000, 45_000),
-                new(PlaybackSegmentKind.Outro, 90_000, 98_000)]));
+                new(PlaybackSegmentKind.Outro, 90_000, 98_000)]) { AutoSkipIntro = autoSkipIntro });
+    }
+
+    [Fact]
+    public void LocalAutoSkipIntroSeeksPastTheIntroWithoutSkippingCredits()
+    {
+        var playback = new FakePlayback();
+        using var player = new PlayerViewModel(playback, new FakeDialogs(null),
+            new NavigationService(NullLogger<NavigationService>.Instance), new ImmediateDispatcher(),
+            segmentService: new FixedSegments(autoSkipIntro: true));
+        playback.Emit(new(PlaybackState.Playing, "episode.mkv", 15_000, 100_000, true, Revision: 1));
+        Assert.Equal(45_000, playback.LastSeek);
+        playback.Emit(playback.Current with { PositionMs = 90_000, Revision = 2 });
+        Assert.Equal(1, playback.SeekCount);
+        Assert.True(player.ShowSkipCredits);
     }
 
     [Fact]

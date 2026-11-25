@@ -18,6 +18,8 @@
                     <StackPanel Grid.Column="1" Margin="24,0,0,0">
                         <TextBlock Text="{Binding ParentTitle}" Foreground="{DynamicResource AccentHoverBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6" />
                         <TextBlock Text="{Binding Card.Title}" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="Filler" Foreground="{DynamicResource AccentHoverBrush}" Margin="0,4,0,0"
+                                   Visibility="{Binding Card.IsFiller, Converter={StaticResource BooleanToVisibility}, FallbackValue=Collapsed}" />
                         <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding DescriptionText}" Margin="0,16,0,0" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" LineHeight="22" />
                         <WrapPanel Margin="0,16,0,0"><Button Content="Choose poster…" Command="{Binding Editor.ChoosePosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" ToolTip="Copy a local image into MyCinema's artwork cache" /><Button Content="Remove poster" Command="{Binding Editor.RemovePosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" ToolTip="Use fallback artwork without deleting the image file" /><Button Content="Use folder poster" Command="{Binding Editor.UseFolderPosterCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,0,8" ToolTip="Return to poster.png, poster.jpg, or poster.jpeg in this title's folder" /></WrapPanel>

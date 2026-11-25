@@ -69,6 +69,9 @@
                                     <DockPanel>
                                         <TextBlock DockPanel.Dock="Right" Text="Current" FontSize="10" Foreground="{DynamicResource AccentHoverBrush}"
                                                    Visibility="{Binding IsActive, Converter={StaticResource BooleanToVisibility}}" />
+                                        <TextBlock DockPanel.Dock="Right" Text="Filler" FontSize="10" Margin="8,0"
+                                                   Foreground="{DynamicResource AccentHoverBrush}"
+                                                   Visibility="{Binding IsFiller, Converter={StaticResource BooleanToVisibility}}" />
                                         <TextBlock Text="{Binding NumberLabel}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
                                     </DockPanel>
                                     <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,0" />

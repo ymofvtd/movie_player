@@ -31,7 +31,7 @@ public sealed class EpisodeSidebarTests : IDisposable
         .AddSingleton<LibraryStore>(sp => new(sp.GetRequiredService<ILibraryRepository>(), NullLogger<LibraryStore>.Instance))
         .BuildServiceProvider();
 
-    private async Task SetupAsync()
+    private async Task SetupAsync(bool includeFiller = false)
     {
         Directory.CreateDirectory(_directory);
         _services = CreateServices();
@@ -41,16 +41,17 @@ public sealed class EpisodeSidebarTests : IDisposable
         var season10 = await library.SaveItemAsync(new() { Title = "Season 10", ItemType = LibraryItemType.Season, ParentId = show.Id, SeasonNumber = 10 });
         var season1 = await library.SaveItemAsync(new() { Title = "Season 01", ItemType = LibraryItemType.Season, ParentId = show.Id, SeasonNumber = 1 });
         await library.SaveItemAsync(new() { Title = "Season 02", ItemType = LibraryItemType.Season, ParentId = show.Id, SeasonNumber = 2 });
-        async Task<MediaFile> Episode(LibraryItem season, int number, int? end = null, bool available = true)
+        async Task<MediaFile> Episode(LibraryItem season, int number, int? end = null, bool available = true, string tag = "")
         {
             var item = await library.SaveItemAsync(new() { Title = $"Episode {number}", ItemType = LibraryItemType.Episode,
                 ParentId = season.Id, SeasonNumber = season.SeasonNumber, EpisodeNumber = number, EpisodeEndNumber = end });
-            var path = Path.Combine(_directory, $"S{season.SeasonNumber:00}E{number:00}.mkv");
+            var path = Path.Combine(_directory, $"S{season.SeasonNumber:00}E{number:00}{tag}.mkv");
             if (available) await File.WriteAllTextAsync(path, "Fake media");
             return await library.SaveFileAsync(new() { LibraryItemId = item.Id, FilePath = path, IsAvailable = available, DurationMs = 100_000 });
         }
         _third = await Episode(season10, 1);
-        _second = await Episode(season1, 10, 11);
+        _second = await Episode(season1, 10, 11, tag: includeFiller ? " [FILLER]" : "");
+        if (includeFiller) await Episode(season1, 12, tag: " [filler]");
         _missing = await Episode(season1, 2, available: false);
         _first = await Episode(season1, 1);
         var film = await library.SaveItemAsync(new() { Title = "Movie", ItemType = LibraryItemType.Movie });
@@ -59,6 +60,24 @@ public sealed class EpisodeSidebarTests : IDisposable
         _movie = await library.SaveFileAsync(new() { LibraryItemId = film.Id, FilePath = filmPath });
         await Store.RefreshAsync();
         await Sidebar.InitializeAsync();
+    }
+
+    [Fact]
+    public async Task SkipFillerAppearsBeforeAndDuringFillerAndJumpsAcrossTheRun()
+    {
+        await SetupAsync(includeFiller: true);
+        await Player.OpenLibraryFileCommand.ExecuteAsync(_first);
+        Assert.True(Player.ShowSkipFiller);
+        Assert.Equal(2, Sidebar.Episodes.Count(e => e.IsFiller));
+        Assert.True(Store.Catalog.IsFillerEpisode(_second.LibraryItemId));
+        await Player.NextEpisodeCommand.ExecuteAsync(null);
+        Assert.Equal(_second.FilePath, _playback.Current.FilePath);
+        Assert.True(Player.ShowSkipFiller);
+        var skipped = Sidebar.Episodes.Single(e => e.IsFiller && !e.IsActive);
+        await Player.SkipFillerCommand.ExecuteAsync(null);
+        Assert.Equal(_third.FilePath, _playback.Current.FilePath);
+        Assert.Null(await Progress.GetAsync(skipped.File!.Id));
+        Assert.False(Player.ShowSkipFiller);
     }
 
     [Fact]

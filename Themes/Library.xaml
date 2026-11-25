@@ -126,10 +126,14 @@
         </Button>
     </DataTemplate>
     <DataTemplate x:Key="EpisodeRowTemplate">
-        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" HorizontalAlignment="Stretch" Margin="0,0,0,8" AutomationProperties.Name="{Binding Title}">
+        <Button Command="{Binding OpenCommand}" Style="{StaticResource MediaButtonStyle}" HorizontalAlignment="Stretch" Margin="0,0,0,8" AutomationProperties.Name="{Binding AccessibleDescription}">
             <Grid Margin="16,13">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /><ColumnDefinition Width="90" /></Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AccentHoverBrush}" VerticalAlignment="Center" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource AccentHoverBrush}" />
+                    <TextBlock Text="Filler" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource AccentHoverBrush}"
+                               Visibility="{Binding IsFiller, Converter={StaticResource LibraryBooleanToVisibility}}" />
+                </StackPanel>
                 <StackPanel Grid.Column="1" Margin="6,0,12,0"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" /><TextBlock Text="{Binding WatchState}" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBlock Text="{Binding ProgressLabel}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0" Visibility="{Binding HasProgress, Converter={StaticResource LibraryBooleanToVisibility}}" /></StackPanel>
                 <TextBlock Grid.Column="2" Text="{Binding Availability}" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{DynamicResource SecondaryTextBrush}" />
             </Grid>

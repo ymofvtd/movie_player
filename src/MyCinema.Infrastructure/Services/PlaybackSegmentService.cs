@@ -119,6 +119,7 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
     private PlaybackSegmentData Load(string filePath, CancellationToken cancellationToken)
     {
         var result = new Dictionary<PlaybackSegmentKind, List<PlaybackSegment>>();
+        bool? autoSkipIntro = null;
         var warnings = false;
         var hasPortableEdits = false;
         string? migrationWarning = null;
@@ -134,6 +135,7 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
                     hasPortableEdits = text.Split('\n').Any(line => line.Trim() == SavedHeader);
                 var parsed = Parse(text, defaultKind);
                 warnings |= parsed.Warning is not null;
+                autoSkipIntro ??= parsed.AutoSkipIntro;
                 // The most specific file wins independently for each segment kind, including "none".
                 foreach (var group in parsed.Values) result.TryAdd(group.Key, group.Value);
             }
@@ -169,7 +171,8 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
             warnings = true;
         }
         return new(result.Values.SelectMany(s => s).OrderBy(s => s.StartMs).ToArray(),
-            migrationWarning ?? (warnings ? "Some skip timings could not be read. You can edit intro/outro timings in the player." : null));
+            migrationWarning ?? (warnings ? "Some skip timings could not be read. You can edit intro/outro timings in the player." : null))
+        { AutoSkipIntro = autoSkipIntro == true };
     }
 
     private static IEnumerable<(string Path, PlaybackSegmentKind? DefaultKind)> Candidates(string video)
@@ -193,17 +196,24 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
         yield return (Path.Combine(directory, "outro.txt"), PlaybackSegmentKind.Outro);
     }
 
-    private sealed record Parsed(Dictionary<PlaybackSegmentKind, List<PlaybackSegment>> Values, string? Warning);
+    private sealed record Parsed(Dictionary<PlaybackSegmentKind, List<PlaybackSegment>> Values, string? Warning, bool? AutoSkipIntro);
 
     private static Parsed Parse(string text, PlaybackSegmentKind? defaultKind)
     {
         var values = new Dictionary<PlaybackSegmentKind, List<PlaybackSegment>>();
         var invalid = false;
+        bool? autoSkipIntro = null;
         foreach (var original in text.Split('\n'))
         {
             var line = original.Split('#', 2)[0].Trim();
             if (line.Length == 0 || line.StartsWith(';')) continue;
             var equals = line.IndexOf('=');
+            if (equals >= 0 && line[..equals].Trim().Equals("auto_skip_intro", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bool.TryParse(line[(equals + 1)..].Trim(), out var enabled)) autoSkipIntro = enabled;
+                else invalid = true;
+                continue;
+            }
             var kind = equals >= 0 ? ParseKind(line[..equals].Trim()) : defaultKind;
             if (kind is null) continue; // Source/provenance metadata can share the file.
             if (!values.TryGetValue(kind.Value, out var segments)) values[kind.Value] = segments = [];
@@ -216,7 +226,7 @@ public sealed class PlaybackSegmentService : IPlaybackSegmentService
             { invalid = true; continue; }
             segments.Add(new(kind.Value, start, end));
         }
-        return new(values, invalid ? "Invalid timing" : null);
+        return new(values, invalid ? "Invalid timing" : null, autoSkipIntro);
     }
 
     private static PlaybackSegmentKind? ParseKind(string key) => key.ToLowerInvariant() switch

@@ -63,6 +63,21 @@ public sealed class PlaybackSegmentTests : IDisposable
     }
 
     [Fact]
+    public async Task AutomaticIntroSkippingCanBeInheritedAndOverridden()
+    {
+        var video = Write("Show/Season 01/episode.mkv", "video");
+        var movie = Write("Other/movie.mkv", "video");
+        Write("Show/skip.txt", "auto_skip_intro=true");
+        Write("Show/Season 01/episode.intro.txt", "00:10-01:40");
+        var data = await _service.LoadAsync(video);
+        Assert.True(data.AutoSkipIntro);
+        Assert.Equal(10_000, Assert.Single(data.Segments).StartMs);
+        Assert.False((await _service.LoadAsync(movie)).AutoSkipIntro);
+        Write("Show/Season 01/episode.mkv.skip.txt", "auto_skip_intro=false");
+        Assert.False((await _service.LoadAsync(video)).AutoSkipIntro);
+    }
+
+    [Fact]
     public async Task MalformedOrOversizedSidecarsCannotBreakPlaybackOrInheritAnInvalidOverride()
     {
         var video = Write("episode.mkv", "video");
