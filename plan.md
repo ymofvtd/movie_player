@@ -23,7 +23,7 @@ It should automatically detect movies, television shows, seasons, episodes, and 
 
 The application must support playback progress tracking, automatic resume, subtitles, audio selection, full-screen playback, episode navigation, and manual library organization.
 
-The design should feel like a modern streaming platform while functioning entirely on the user's local computer.
+The design should feel like a modern streaming platform while functioning entirely on the user's local computer..
 
 ### Primary Goals
 
@@ -44,20 +44,20 @@ The design should feel like a modern streaming platform while functioning entire
 
 ### Core Technologies
 
-| Technology | Purpose |
-|---|---|
-| C# | Main application programming language |
-| .NET 10 LTS | Application runtime |
-| WPF | Windows desktop user interface |
-| XAML | Interface layouts and styling |
-| MVVM | Separation of UI and application logic |
-| LibVLCSharp.WPF | Video playback integration |
-| VideoLAN.LibVLC.Windows | Native VLC video engine |
-| SQLite | Local application database |
-| Microsoft.Data.Sqlite | Database access |
-| CommunityToolkit.Mvvm | Observable properties and commands |
-| Microsoft.Extensions.DependencyInjection | Dependency injection |
-| Microsoft.Extensions.Logging | Application logging |
+| Technology                               | Purpose                                |
+| ---------------------------------------- | -------------------------------------- |
+| C#                                       | Main application programming language  |
+| .NET 10 LTS                              | Application runtime                    |
+| WPF                                      | Windows desktop user interface         |
+| XAML                                     | Interface layouts and styling          |
+| MVVM                                     | Separation of UI and application logic |
+| LibVLCSharp.WPF                          | Video playback integration             |
+| VideoLAN.LibVLC.Windows                  | Native VLC video engine                |
+| SQLite                                   | Local application database             |
+| Microsoft.Data.Sqlite                    | Database access                        |
+| CommunityToolkit.Mvvm                    | Observable properties and commands     |
+| Microsoft.Extensions.DependencyInjection | Dependency injection                   |
+| Microsoft.Extensions.Logging             | Application logging                    |
 
 ### Visual Studio Requirements
 
@@ -223,13 +223,13 @@ D:\Entertaiment\
 
 The application recognizes five hierarchical item types.
 
-| Type | Description |
-|---|---|
+| Type      | Description                    |
+| --------- | ------------------------------ |
 | Franchise | A collection of related movies |
-| Movie | An individual feature film |
-| Show | A television series |
-| Season | A season belonging to a show |
-| Episode | An individual episode |
+| Movie     | An individual feature film     |
+| Show      | A television series            |
+| Season    | A season belonging to a show   |
+| Episode   | An individual episode          |
 
 ### Example Detection Results
 
@@ -602,20 +602,20 @@ Test full-screen overlays, z-order, focus, and mouse input early in development.
 
 ### 6.7 Keyboard Shortcuts
 
-| Key | Action |
-|---|---|
-| Space | Play / Pause |
-| Left Arrow | Rewind 10 seconds |
+| Key         | Action             |
+| ----------- | ------------------ |
+| Space       | Play / Pause       |
+| Left Arrow  | Rewind 10 seconds  |
 | Right Arrow | Forward 10 seconds |
-| Up Arrow | Increase volume |
-| Down Arrow | Decrease volume |
-| F | Toggle fullscreen |
-| Escape | Exit fullscreen |
-| M | Mute / Unmute |
-| N | Next episode |
-| P | Previous episode |
-| S | Subtitle menu |
-| Ctrl + O | Open video file |
+| Up Arrow    | Increase volume    |
+| Down Arrow  | Decrease volume    |
+| F           | Toggle fullscreen  |
+| Escape      | Exit fullscreen    |
+| M           | Mute / Unmute      |
+| N           | Next episode       |
+| P           | Previous episode   |
+| S           | Subtitle menu      |
+| Ctrl + O    | Open video file    |
 
 Keyboard handling must avoid interfering with text input fields and modal dialogs.
 
@@ -1022,31 +1022,31 @@ Never store the SQLite database inside the movie library directory by default.
 
 ### Table: LibraryRoots
 
-| Field | Purpose |
-|---|---|
-| Id | Primary key |
-| Path | Library directory |
-| IsEnabled | Enable/disable root |
+| Field       | Purpose              |
+| ----------- | -------------------- |
+| Id          | Primary key          |
+| Path        | Library directory    |
+| IsEnabled   | Enable/disable root  |
 | LastScanUtc | Last successful scan |
-| CreatedUtc | Date added |
+| CreatedUtc  | Date added           |
 
 ### Table: LibraryItems
 
-| Field | Purpose |
-|---|---|
-| Id | Primary key |
-| ParentId | Parent item ID, nullable |
-| ItemType | Franchise/Movie/Show/Season/Episode |
-| Title | Display name |
-| SortTitle | Normalized sorting title |
-| ReleaseYear | Optional year |
-| SeasonNumber | Optional |
-| EpisodeNumber | Optional |
-| Description | Optional |
-| PosterPath | Local cached artwork |
-| IsManualOverride | Protect classification edits |
-| CreatedUtc | Created timestamp |
-| UpdatedUtc | Updated timestamp |
+| Field            | Purpose                             |
+| ---------------- | ----------------------------------- |
+| Id               | Primary key                         |
+| ParentId         | Parent item ID, nullable            |
+| ItemType         | Franchise/Movie/Show/Season/Episode |
+| Title            | Display name                        |
+| SortTitle        | Normalized sorting title            |
+| ReleaseYear      | Optional year                       |
+| SeasonNumber     | Optional                            |
+| EpisodeNumber    | Optional                            |
+| Description      | Optional                            |
+| PosterPath       | Local cached artwork                |
+| IsManualOverride | Protect classification edits        |
+| CreatedUtc       | Created timestamp                   |
+| UpdatedUtc       | Updated timestamp                   |
 
 The `ParentId` relationship supports:
 
@@ -1057,32 +1057,32 @@ Show → Season → Episode
 
 ### Table: MediaFiles
 
-| Field | Purpose |
-|---|---|
-| Id | Primary key |
-| LibraryItemId | Linked library item |
-| FilePath | Absolute file location |
-| FileSize | File size |
-| LastModifiedUtc | Modification timestamp |
-| DurationMs | Video duration |
-| Edition | Edition information |
-| VideoFormat | File extension or container |
-| IsAvailable | File availability |
-| LastSeenUtc | Last detected during scan |
+| Field           | Purpose                     |
+| --------------- | --------------------------- |
+| Id              | Primary key                 |
+| LibraryItemId   | Linked library item         |
+| FilePath        | Absolute file location      |
+| FileSize        | File size                   |
+| LastModifiedUtc | Modification timestamp      |
+| DurationMs      | Video duration              |
+| Edition         | Edition information         |
+| VideoFormat     | File extension or container |
+| IsAvailable     | File availability           |
+| LastSeenUtc     | Last detected during scan   |
 
 Create appropriate indexes and enforce unique canonical file paths.
 
 ### Table: PlaybackProgress
 
-| Field | Purpose |
-|---|---|
-| Id | Primary key |
-| MediaFileId | Referenced media file |
-| PositionMs | Last playback position |
-| DurationMs | Last known duration |
-| IsCompleted | Completion state |
-| LastPlayedUtc | Last played timestamp |
-| UpdatedUtc | Last update |
+| Field         | Purpose                |
+| ------------- | ---------------------- |
+| Id            | Primary key            |
+| MediaFileId   | Referenced media file  |
+| PositionMs    | Last playback position |
+| DurationMs    | Last known duration    |
+| IsCompleted   | Completion state       |
+| LastPlayedUtc | Last played timestamp  |
+| UpdatedUtc    | Last update            |
 
 Maintain one current progress record per media file for the default single-user profile.
 
@@ -1844,22 +1844,22 @@ Test:
 
 ### Manual Playback Tests
 
-| Test | Expected Result |
-|---|---|
-| Open MKV | Video plays |
-| Open MP4 | Video plays |
-| Pause video | Playback pauses |
-| Rewind 10 seconds | Position decreases |
-| Forward 10 seconds | Position increases |
-| Drag seek bar | Playback seeks |
-| Switch episode | Selected episode loads |
-| Restart application | Progress persists |
-| Enable subtitles | Selected subtitle displays |
-| Select audio track | Audio changes |
-| Enter fullscreen | Video fills display correctly |
-| Exit fullscreen | Window state restores |
-| Remove a file | App displays unavailable state |
-| Disconnect library drive | Watch history remains |
+| Test                     | Expected Result                |
+| ------------------------ | ------------------------------ |
+| Open MKV                 | Video plays                    |
+| Open MP4                 | Video plays                    |
+| Pause video              | Playback pauses                |
+| Rewind 10 seconds        | Position decreases             |
+| Forward 10 seconds       | Position increases             |
+| Drag seek bar            | Playback seeks                 |
+| Switch episode           | Selected episode loads         |
+| Restart application      | Progress persists              |
+| Enable subtitles         | Selected subtitle displays     |
+| Select audio track       | Audio changes                  |
+| Enter fullscreen         | Video fills display correctly  |
+| Exit fullscreen          | Window state restores          |
+| Remove a file            | App displays unavailable state |
+| Disconnect library drive | Watch history remains          |
 
 Test large files and long-duration videos in addition to small samples.
 
